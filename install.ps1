@@ -89,9 +89,36 @@ function Install-KeplerCrew {
         Write-Host 'License OK.'
 
         # 3. Resolve the release (latest published stable, or KEPLER_VERSION).
+        #    Three different things can go wrong here and they need three different
+        #    messages. A license that authenticates fine can still be refused the
+        #    release catalog (policy forbids license-key auth), or be shown an EMPTY
+        #    catalog (it lacks an entitlement the releases are gated on). Reporting
+        #    either as "version not found" sends the customer hunting for a version
+        #    problem that does not exist.
         $auth = @{ Accept = $jsonApi; Authorization = ('License ' + $key) }
-        $allReleases = (Invoke-RestMethod -Uri ($api + '/releases?limit=50') -Headers $auth).data |
+        try {
+            $releaseData = (Invoke-RestMethod -Uri ($api + '/releases?limit=50') -Headers $auth).data
+        }
+        catch [Net.WebException] {
+            $status = $null
+            if ($null -ne $_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode }
+            if ($status -eq 401 -or $status -eq 403) {
+                throw ('Your license is valid but is not permitted to download releases (' + $status + '). ' +
+                       'This is a license configuration problem, not a problem with your machine. ' +
+                       'Contact support@aichargelabs.com and quote error RELEASE-AUTH-' + $status + '.')
+            }
+            throw ('Could not reach the release service' + $(if ($status) { ' (' + $status + ')' } else { '' }) +
+                   '. Check your network and try again.')
+        }
+        $allReleases = $releaseData |
             Where-Object { $_.attributes.status -eq 'PUBLISHED' -and $_.attributes.channel -eq 'stable' }
+
+        # An empty catalog is an entitlement problem, never a version problem.
+        if ($null -eq $allReleases -or @($allReleases).Count -eq 0) {
+            throw ('Your license is valid but is not entitled to any published release. ' +
+                   'This is a license configuration problem, not a problem with your machine. ' +
+                   'Contact support@aichargelabs.com and quote error RELEASE-NONE.')
+        }
 
         # Sort by semver: major, minor, patch (all numeric).
         # attributes.semver is an OBJECT ({major,minor,patch,...}), so matching a regex
@@ -113,11 +140,26 @@ function Install-KeplerCrew {
         if (-not [string]::IsNullOrWhiteSpace($wanted)) {
             $wanted = $wanted.Trim().TrimStart('v')
             $release = $sortedReleases | Where-Object { $_.attributes.version -eq $wanted } | Select-Object -First 1
-            if ($null -eq $release) { throw ('Version "' + $wanted + '" was not found or your license cannot access it.') }
+            if ($null -eq $release) {
+                # The catalog is non-empty (checked above), so this really is a bad
+                # version. Name the ones that ARE available, and point at the pin --
+                # $env:KEPLER_VERSION survives for the whole PowerShell session, so a
+                # pin set once keeps applying to every later install and update in
+                # that window, long after the user has forgotten setting it.
+                $available = ($sortedReleases | ForEach-Object { $_.attributes.version }) -join ', '
+                throw ('Version "' + $wanted + '" is not available to your license. ' +
+                       'Your license can install: ' + $available + '. ' +
+                       'This version was requested because KEPLER_VERSION is set in this shell. ' +
+                       'To install the latest instead, run:  $env:KEPLER_VERSION=$null  ' +
+                       'and then re-run the install command.')
+            }
         }
         else {
             $release = $sortedReleases | Select-Object -First 1
-            if ($null -eq $release) { throw 'No published stable release is available for your license.' }
+            if ($null -eq $release) {
+                throw ('No published stable release is available for your license. ' +
+                       'Contact support@aichargelabs.com and quote error RELEASE-NONE-STABLE.')
+            }
         }
         $version = [string]$release.attributes.version
 
@@ -175,10 +217,17 @@ function Install-KeplerCrew {
                 $statusCode = [int]$metaResp.StatusCode
                 $statusClass = [Math]::Floor($statusCode / 100)
                 if ($statusCode -eq 401 -or $statusCode -eq 403) {
-                    throw ('License entitlement denied (' + $statusCode + '). Check your license key and try again.')
+                    # Do NOT tell the user to check their key: the key already passed
+                    # validation and listed this release. Being refused the artifact is
+                    # an entitlement problem on our side, and re-typing the key never
+                    # fixes it.
+                    throw ('Your license listed release ' + $version + ' but was refused its download (' +
+                           $statusCode + '). This is a license configuration problem, not a problem with ' +
+                           'your machine. Contact support@aichargelabs.com and quote error ARTIFACT-AUTH-' + $statusCode + '.')
                 }
                 elseif ($statusCode -eq 404) {
-                    throw ('Release ' + $version + ' has no Windows bundle yet (' + $filename + ' not found for this platform).')
+                    throw ('Release ' + $version + ' has no Windows bundle (' + $filename + ' is missing for this platform). ' +
+                           'Contact support@aichargelabs.com and quote error ARTIFACT-MISSING-' + $version + '.')
                 }
                 elseif ($statusClass -eq 4 -or $statusClass -eq 5) {
                     throw ('Service error (' + $statusCode + '). Please try again later.')

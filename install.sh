@@ -125,11 +125,23 @@ echo "License OK."
 echo "Fetching available releases..."
 
 # Use curl config from stdin to pass Authorization header without exposing in ps.
-releases=$(printf 'header = "Authorization: License %s"\n' "$key" | curl -fsSL -K - -X GET "$API/releases?limit=50" \
-    -H "Accept: $ACCEPT") || true
+# Capture the HTTP status too: a license that authenticates fine can still be
+# refused the catalog (policy forbids license-key auth). Reporting that as a
+# version problem sends the customer hunting for something that is not wrong.
+rel_tmp=$(mktemp)
+rel_code=$(printf 'header = "Authorization: License %s"\n' "$key" | curl -sSL -K - -X GET "$API/releases?limit=50" \
+    -H "Accept: $ACCEPT" -o "$rel_tmp" -w '%{http_code}') || rel_code="000"
+releases=$(cat "$rel_tmp" 2>/dev/null || true)
+rm -f "$rel_tmp"
 
-if [ -z "$releases" ]; then
-    printf '%s\n' "Error: failed to fetch releases." >&2
+if [ "$rel_code" = "401" ] || [ "$rel_code" = "403" ]; then
+    printf '%s\n' "Error: your license is valid but is not permitted to download releases ($rel_code)." >&2
+    printf '%s\n' "This is a license configuration problem, not a problem with your machine." >&2
+    printf '%s\n' "Contact support@aichargelabs.com and quote error RELEASE-AUTH-$rel_code." >&2
+    exit 1
+fi
+if [ "$rel_code" != "200" ] || [ -z "$releases" ]; then
+    printf '%s\n' "Error: could not reach the release service ($rel_code). Check your network and try again." >&2
     exit 1
 fi
 
@@ -160,8 +172,16 @@ published=""
 if published=$(parse_releases_python 2>/dev/null) && [ -n "$published" ]; then
     use_python=1
 else
-    published=$(parse_releases_shell)
+    published=$(parse_releases_shell || true)
     use_python=0
+fi
+
+# An empty catalog is an entitlement problem, never a version problem.
+if [ -z "$published" ]; then
+    printf '%s\n' "Error: your license is valid but is not entitled to any published release." >&2
+    printf '%s\n' "This is a license configuration problem, not a problem with your machine." >&2
+    printf '%s\n' "Contact support@aichargelabs.com and quote error RELEASE-NONE." >&2
+    exit 1
 fi
 
 wanted="${KEPLER_VERSION-}"
@@ -218,7 +238,14 @@ for line in sys.stdin:
         version=$(printf '%s' "$published" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p' | grep -Fx "$wanted" | head -1)
     fi
     if [ -z "$version" ]; then
-        printf '%s\n' "Error: version \"$wanted\" was not found or your license cannot access it." >&2
+        # The catalog is non-empty (checked above), so this really is a bad version.
+        # Name the ones that ARE available, and point at the pin: an exported
+        # KEPLER_VERSION keeps applying to every later install in that shell.
+        avail=$(printf '%s\n' "$published" | sed -n 's/.*"version"[: ]*"\([^"]*\)".*/\1/p' | tr '\n' ' ')
+        printf '%s\n' "Error: version \"$wanted\" is not available to your license." >&2
+        printf '%s\n' "Your license can install: $avail" >&2
+        printf '%s\n' "This version was requested because KEPLER_VERSION is set in this shell." >&2
+        printf '%s\n' "To install the latest instead, run:  unset KEPLER_VERSION  and re-run the install command." >&2
         exit 1
     fi
 else
@@ -244,6 +271,7 @@ if versions:
     fi
     if [ -z "$version" ]; then
         printf '%s\n' "Error: no published stable release is available for your license." >&2
+        printf '%s\n' "Contact support@aichargelabs.com and quote error RELEASE-NONE-STABLE." >&2
         exit 1
     fi
 fi
