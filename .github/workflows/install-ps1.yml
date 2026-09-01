@@ -1,0 +1,25 @@
+name: Windows installer security
+
+on:
+  pull_request:
+    paths:
+      - install.ps1
+      - tests/verify-install.ps1
+      - .github/workflows/install-ps1.yml
+  push:
+    branches: [main]
+    paths:
+      - install.ps1
+      - tests/verify-install.ps1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse installer and enforce security invariants
+        shell: powershell
+        run: ./tests/verify-install.ps1 -InstallerPath ./install.ps1

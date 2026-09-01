@@ -8,6 +8,8 @@
 #   KEPLER_INSTALL_DIR  optional install directory (default: %LOCALAPPDATA%\Programs\KeplerCrew)
 #   KEPLER_NO_LAUNCH    set to 1 to skip launching after install
 #   KEPLER_FORCE        set to 1 to reinstall even when already on the resolved version
+# Security: SAC/Code Integrity state is read only; no firewall or Windows
+#   security policy is changed. SAC-enabled machines install signed bundles only.
 # Author: aichargelabs.
 
 # Runtime PS version check (no #Requires to avoid breaking irm|iex on some hosts)
@@ -15,6 +17,149 @@ if ($PSVersionTable.PSVersion.Major -lt 5) {
     Write-Host 'PowerShell 5.0 or later is required. You are running version ' $PSVersionTable.PSVersion
     Write-Host 'Please upgrade: https://docs.microsoft.com/en-us/powershell/scripting/install/installing-powershell-on-windows'
     return
+}
+
+function Get-KeplerSmartAppControlState {
+    # Read only. Turning SAC off is one-way without resetting Windows, so this
+    # installer must never write VerifiedAndReputablePolicyState.
+    try {
+        $value = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name 'VerifiedAndReputablePolicyState' -ErrorAction Stop).VerifiedAndReputablePolicyState
+    }
+    catch { return $null }
+    switch ([int]$value) {
+        0 { return 'Off' }
+        1 { return 'On (enforce)' }
+        2 { return 'On (evaluation)' }
+        default { return ('Unknown state ' + $value) }
+    }
+}
+
+function Get-KeplerCodeIntegrityBlocks {
+    param([datetime]$StartedAt)
+    # Events 3033/3077 identify Code Integrity/SAC refusal, not a firewall error.
+    # Scope them to this launch so an older unrelated Kepler event cannot be
+    # misreported as the cause of today's startup failure.
+    try {
+        return @(Get-WinEvent -FilterHashtable @{
+                LogName = 'Microsoft-Windows-CodeIntegrity/Operational'
+                Id = 3033, 3077
+                StartTime = $StartedAt.AddSeconds(-2)
+            } -ErrorAction Stop | Where-Object { $_.Message -match 'kepler' })
+    }
+    catch { return $null }
+}
+
+function Test-KeplerPathWritable {
+    param([string]$Path)
+    $ErrorActionPreference = 'Stop'
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) {
+            New-Item -ItemType Directory -Path $Path -Force -ErrorAction Stop | Out-Null
+        }
+        $probe = Join-Path $Path ('kepler-write-probe-' + $PID + '.tmp')
+        Set-Content -LiteralPath $probe -Value 'probe' -Encoding ascii -ErrorAction Stop
+        Remove-Item -LiteralPath $probe -Force -ErrorAction Stop
+        return $true
+    }
+    catch { return $false }
+}
+
+function Get-KeplerWriteAccessAction {
+    param(
+        [bool]$Writable,
+        [bool]$CustomInstallDir,
+        [bool]$AlreadyElevated,
+        [bool]$Administrator,
+        [bool]$HasScriptPath
+    )
+    if ($Writable) { return 'Continue' }
+    if (-not $CustomInstallDir) { return 'FailDefault' }
+    if ($AlreadyElevated) { return 'FailElevated' }
+    if ($Administrator) { return 'FailAdministrator' }
+    if (-not $HasScriptPath) { return 'FailScriptless' }
+    return 'ElevateOnce'
+}
+
+function Test-KeplerSignatureGate {
+    param([string]$Root)
+    $files = @(Get-ChildItem -LiteralPath $Root -Recurse -Force -Include *.exe, *.dll -File -ErrorAction SilentlyContinue)
+    if ($files.Count -eq 0) {
+        throw 'No executable files were found in the downloaded bundle (error SIGN-NONE).'
+    }
+    $bad = @()
+    foreach ($file in $files) {
+        try {
+            $status = (Get-AuthenticodeSignature -LiteralPath $file.FullName).Status
+        }
+        catch { $status = 'UnknownError' }
+        if ([string]$status -ne 'Valid') {
+            $relative = $file.FullName.Substring($Root.Length).TrimStart('\')
+            $bad += ('  ' + $relative + ' -- ' + $status)
+        }
+    }
+    if ($bad.Count -gt 0) {
+        throw ('Windows Smart App Control requires a trusted Authenticode signature, but this bundle failed verification:' + "`n" + ($bad -join "`n") + "`n" +
+            'The install stopped before replacing or running files. Keep Smart App Control, Defender, and Code Integrity enabled.' + "`n" +
+            'Contact support@aichargelabs.com for a signed build (error SIGN-INVALID).')
+    }
+    Write-Host ('Signatures OK -- ' + $files.Count + ' executable file(s) verified.')
+}
+
+function Invoke-KeplerSacSignatureGate {
+    param([string]$SacState, [string]$Root)
+    if ($SacState -like 'On*') {
+        Test-KeplerSignatureGate -Root $Root
+        return $true
+    }
+    return $false
+}
+
+function Test-KeplerWideBind {
+    param([string]$ScriptText)
+    if ([string]::IsNullOrWhiteSpace($ScriptText)) { return $false }
+    $wideBind = @(
+        '(?i)(?:--host|--bind)\s+["'']?(?:0\.0\.0\.0|\[::\]|::|\*)',
+        '(?i)(?:host|bind)\s*=\s*["'']?(?:0\.0\.0\.0|\[::\]|::|\*)',
+        '(?i)IPAddress\]?\s*::\s*(?:Any|IPv6Any)',
+        '(?i)(?<![\d.])0\.0\.0\.0(?![\d.])'
+    )
+    foreach ($pattern in $wideBind) {
+        if ($ScriptText -match $pattern) { return $true }
+    }
+    return $false
+}
+
+function Wait-KeplerLoopbackHealth {
+    param([int]$Attempts = 45, [int]$Seconds = 2)
+    for ($attempt = 0; $attempt -lt $Attempts; $attempt++) {
+        Start-Sleep -Seconds $Seconds
+        foreach ($port in 8890..8899) {
+            try {
+                $health = Invoke-RestMethod -Uri ('http://127.0.0.1:' + $port + '/api/health') -TimeoutSec 2
+                if ($null -ne $health -and ([string]$health.status -in @('ok', 'healthy'))) {
+                    return $port
+                }
+            }
+            catch { }
+        }
+    }
+    return 0
+}
+
+function Show-KeplerStartFailureGuidance {
+    param([string]$InstallDir, [string]$Version, [datetime]$StartedAt)
+    $blocks = Get-KeplerCodeIntegrityBlocks -StartedAt $StartedAt
+    Write-Host ''
+    if ($null -ne $blocks -and @($blocks).Count -gt 0) {
+        Write-Host 'Windows Code Integrity (Smart App Control / WDAC) blocked startup; this is not a firewall failure.'
+        Write-Host ('  Windows refused a KeplerCrew ' + $Version + ' binary (events 3033/3077).')
+        Write-Host '  Keep Smart App Control and Defender enabled. Contact support@aichargelabs.com for a signed build (error CI-BLOCKED).'
+        return
+    }
+    Write-Host 'The backend did not confirm healthy on loopback ports 8890-8899.'
+    Write-Host ('  For a chosen port: powershell -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'run.ps1') + '" -Port 8905')
+    Write-Host '  If antivirus quarantined a binary, leave it quarantined and contact support for a signed build.'
+    Write-Host '  No firewall change is needed: KeplerCrew listens on 127.0.0.1 only.'
 }
 
 function Install-KeplerCrew {
@@ -42,6 +187,7 @@ function Install-KeplerCrew {
 
         # 0. Resolve the install directory first -- an existing install supplies
         #    the stored license key and the installed version for update checks.
+        $customInstallDir = -not [string]::IsNullOrWhiteSpace($env:KEPLER_INSTALL_DIR)
         $installDir = $env:KEPLER_INSTALL_DIR
         if ([string]::IsNullOrWhiteSpace($installDir)) {
             $installDir = Join-Path $env:LOCALAPPDATA 'Programs\KeplerCrew'
@@ -51,6 +197,49 @@ function Install-KeplerCrew {
         $installed = $null
         if (Test-Path -LiteralPath $versionFile) {
             $installed = ([string](Get-Content -LiteralPath $versionFile -Raw)).Trim()
+        }
+
+        # The default per-user directory needs no administrator rights. Elevate
+        # once only when a custom protected directory is actually unwritable.
+        $writable = Test-KeplerPathWritable -Path $installDir
+        $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        $writeAction = Get-KeplerWriteAccessAction `
+            -Writable $writable `
+            -CustomInstallDir $customInstallDir `
+            -AlreadyElevated ($env:KEPLER_ELEVATED -eq '1') `
+            -Administrator $isAdmin `
+            -HasScriptPath (-not [string]::IsNullOrWhiteSpace($PSCommandPath))
+        if ($writeAction -ne 'Continue') {
+            if ($writeAction -eq 'FailDefault') {
+                throw ('The default per-user install directory is unexpectedly unwritable: "' +
+                    $installDir + '". Check your LOCALAPPDATA permissions; the installer will not request ' +
+                    'administrator rights for the default path (error DEFAULT-PATH-UNWRITABLE).')
+            }
+            if ($writeAction -eq 'FailElevated') {
+                throw ('The elevated installer still cannot write to "' + $installDir + '". Choose a user-writable KEPLER_INSTALL_DIR.')
+            }
+            if ($writeAction -eq 'FailAdministrator') {
+                throw ('"' + $installDir + '" is not writable even with administrator rights. Choose another KEPLER_INSTALL_DIR.')
+            }
+            if ($writeAction -eq 'FailScriptless') {
+                throw ('"' + $installDir + '" needs administrator rights. Save install.ps1 and run it from an elevated PowerShell, or use the default per-user directory.')
+            }
+            Write-Host ('"' + $installDir + '" needs administrator rights -- requesting UAC consent once...')
+            $childArgs = '-NoProfile -ExecutionPolicy Bypass -Command "& { $env:KEPLER_ELEVATED = ''1''; & ''<PATH>'' }"'
+            $childArgs = $childArgs.Replace('<PATH>', $PSCommandPath)
+            try {
+                Start-Process powershell -Verb RunAs -Wait -ArgumentList $childArgs | Out-Null
+            }
+            catch {
+                throw ('Elevation was declined: ' + $_.Exception.Message + ' Nothing was changed.')
+            }
+            return
+        }
+
+        # Read-only security preflight. SAC is never disabled or reconfigured.
+        $sacState = Get-KeplerSmartAppControlState
+        if ($sacState -like 'On*') {
+            Write-Host ('Smart App Control is ' + $sacState + ' -- the downloaded bundle must be Authenticode-signed.')
         }
 
         # 1. License key -- env var, stored key from a previous install, or prompt
@@ -368,6 +557,16 @@ function Install-KeplerCrew {
             throw ('Extraction failed: run.ps1 not found in the archive.')
         }
 
+        # SAC-enabled Windows will refuse unsigned native code. Verify before
+        # swapping the current install, and never suggest weakening that policy.
+        $null = Invoke-KeplerSacSignatureGate -SacState $sacState -Root $stagingDir
+
+        # KeplerCrew is local-only. A wide bind would create a real network
+        # exposure and must not be "fixed" by adding a firewall exception.
+        if (Test-KeplerWideBind -ScriptText ([string](Get-Content -LiteralPath $extractedRunScript -Raw))) {
+            throw 'The bundle launcher requests a non-loopback bind. Installation stopped (error BIND-WIDE).'
+        }
+
         # Preserve licenses directory from current install (if exists)
         $licenseDir = Join-Path $installDir 'licenses'
         $stagingLicenseDir = Join-Path $stagingDir 'licenses'
@@ -458,11 +657,19 @@ function Install-KeplerCrew {
             }
         }
 
-        # 10. Launch.
+        # 10. Launch, then verify the backend on loopback only.
         $runScript = Join-Path $installDir 'run.ps1'
         if ((Test-Path -LiteralPath $runScript) -and ($env:KEPLER_NO_LAUNCH -ne '1')) {
             Write-Host 'Starting KeplerCrew...'
+            $launchStartedAt = Get-Date
             Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"' + $runScript + '"') -WorkingDirectory $installDir
+            $healthyOn = Wait-KeplerLoopbackHealth
+            if ($healthyOn -gt 0) {
+                Write-Host ('Backend healthy on 127.0.0.1:' + $healthyOn + ' -- UI: http://127.0.0.1:' + $healthyOn + '/')
+            }
+            else {
+                Show-KeplerStartFailureGuidance -InstallDir $installDir -Version $version -StartedAt $launchStartedAt
+            }
         }
         else {
             Write-Host ('Run it any time: powershell -ExecutionPolicy Bypass -File "' + $runScript + '"')
@@ -482,4 +689,6 @@ function Install-KeplerCrew {
     }
 }
 
-Install-KeplerCrew
+if ($env:KEPLER_INSTALLER_TEST_ONLY -ne '1') {
+    Install-KeplerCrew
+}
