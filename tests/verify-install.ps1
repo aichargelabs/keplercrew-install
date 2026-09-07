@@ -168,6 +168,34 @@ $wiredSacCommands = @($installFunction.Body.FindAll({
 }, $true))
 $productionSacWiringBehavior = ($wiredSacCommands.Count -eq 1)
 
+# Every Windows one-liner we PUBLISH must survive a shell that drops the quotes
+# around the -Command payload. Two properties make that safe:
+#   -NoProfile      the child never prints the user's profile banner into the
+#                   stream, so a stripped quote cannot feed banner text to iex.
+#   no pipe inside  a '|' in the payload re-binds to the PARENT shell when the
+#                   quotes are lost, turning the child's stdout into commands.
+# A 2026-09-07 report showed the old 'irm URL | iex' payload executing a user's
+# profile banner line by line. Keep every documented invocation pipe-free.
+$repoRoot = Split-Path -Parent $InstallerPath
+$oneLinerPattern = [regex]'(?i)powershell(?<flags>[^
+"]*?)-Command\s+"(?<payload>[^"]*)"'
+$profileFailures = @()
+$pipeFailures = @()
+foreach ($docFile in (Get-ChildItem -LiteralPath $repoRoot -File |
+        Where-Object { $_.Extension -eq '.ps1' -or $_.Extension -eq '.md' })) {
+    $docText = [IO.File]::ReadAllText($docFile.FullName)
+    foreach ($match in $oneLinerPattern.Matches($docText)) {
+        if ($match.Groups['flags'].Value -notmatch '(?i)-NoProfile') {
+            $profileFailures += ($docFile.Name + ': ' + $match.Value)
+        }
+        if ($match.Groups['payload'].Value -match '\|') {
+            $pipeFailures += ($docFile.Name + ': ' + $match.Value)
+        }
+    }
+}
+$publishedOneLiners = @($oneLinerPattern.Matches(
+    [IO.File]::ReadAllText((Join-Path $repoRoot 'README.md')))).Count
+
 $checks = [ordered]@{
     ParserClean = $true
     AuthenticodeGate = $hiddenSignatureBehavior
@@ -184,9 +212,13 @@ $checks = [ordered]@{
     LaunchScopedIntegrityEvents = $eventBehavior
     BoundedElevation = ($accessBehavior -and ((Get-KeplerWriteAccessAction $false $true $false $false $true) -eq 'ElevateOnce'))
     SacConditionalSignatureGate = ($sacConditionalBehavior -and $productionSacWiringBehavior)
+    OneLinersNeverLoadUserProfile = ($profileFailures.Count -eq 0)
+    OneLinersQuoteStripSafe = ($pipeFailures.Count -eq 0)
+    OneLinersDocumented = ($publishedOneLiners -ge 1)
 }
 
 $failed = @($checks.GetEnumerator() | Where-Object { -not $_.Value })
 $checks.GetEnumerator() | ForEach-Object { '{0}={1}' -f $_.Key, $_.Value }
+$profileFailures + $pipeFailures | ForEach-Object { Write-Error ('unsafe published one-liner -> ' + $_) }
 if ($failed.Count -gt 0) { exit 2 }
 exit 0

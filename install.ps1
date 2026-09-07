@@ -1,5 +1,5 @@
 # KeplerCrew client installer and updater.
-# Usage: powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/install.ps1 | iex"
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/install.ps1)"
 # Running it again updates an existing install to the latest published release.
 # Env:
 #   KEPLER_LICENSE_KEY  license key (existing install's stored key is reused; prompted otherwise)
@@ -157,7 +157,7 @@ function Show-KeplerStartFailureGuidance {
         return
     }
     Write-Host 'The backend did not confirm healthy on loopback ports 8890-8899.'
-    Write-Host ('  For a chosen port: powershell -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'run.ps1') + '" -Port 8905')
+    Write-Host ('  For a chosen port: powershell -NoProfile -ExecutionPolicy Bypass -File "' + (Join-Path $InstallDir 'run.ps1') + '" -Port 8905')
     Write-Host '  If antivirus quarantined a binary, leave it quarantined and contact support for a signed build.'
     Write-Host '  No firewall change is needed: KeplerCrew listens on 127.0.0.1 only.'
 }
@@ -672,7 +672,7 @@ function Install-KeplerCrew {
             }
         }
         else {
-            Write-Host ('Run it any time: powershell -ExecutionPolicy Bypass -File "' + $runScript + '"')
+            Write-Host ('Run it any time: powershell -NoProfile -ExecutionPolicy Bypass -File "' + $runScript + '"')
         }
     }
     catch {
