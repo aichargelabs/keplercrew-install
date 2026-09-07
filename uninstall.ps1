@@ -59,7 +59,7 @@ function Uninstall-KeplerCrew {
             Write-Host ''
             if ([Console]::IsInputRedirected) {
                 Write-Host 'Running non-interactively. Re-run with KEPLER_YES=1 to confirm:'
-                Write-Host '  $env:KEPLER_YES=1; irm https://get.keplercrew.com/uninstall.ps1 | iex'
+                Write-Host '  powershell -ExecutionPolicy Bypass -Command "$env:KEPLER_YES=1; irm https://get.keplercrew.com/uninstall.ps1 | iex"'
                 return
             }
             $answer = Read-Host 'Type yes to continue'
@@ -201,7 +201,8 @@ function Uninstall-KeplerCrew {
 
         Write-Host ''
         Write-Host 'KeplerCrew uninstalled.'
-        Write-Host 'Reinstall any time: irm https://get.keplercrew.com/install.ps1 | iex'
+        Write-Host 'Reinstall any time:'
+        Write-Host '  powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/install.ps1 | iex"'
     }
     catch {
         # Error path safe under iex: do NOT exit (closes customer's console)
