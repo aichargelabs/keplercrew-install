@@ -14,7 +14,12 @@
 set -eu
 
 ACCOUNT="11cdb180-ce9f-4b8b-82c6-ca59f9b2c512"
-API="https://api.keygen.sh/v1/accounts/$ACCOUNT"
+# Licensing host. Overridable so the same installer can be pointed at the
+# self-hosted Keygen without republishing: set KEPLER_KEYGEN_BASE to the API
+# root (no trailing slash), e.g. https://licenses.aichargelabs.com/v1
+KEYGEN_BASE="${KEPLER_KEYGEN_BASE:-https://api.keygen.sh/v1}"
+KEYGEN_BASE="${KEYGEN_BASE%/}"
+API="$KEYGEN_BASE/accounts/$ACCOUNT"
 ACCEPT="application/vnd.api+json"
 
 # Helper: parse JSON with python3 if available, otherwise fall back to shell parsing.
