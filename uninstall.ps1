@@ -1,5 +1,5 @@
 # KeplerCrew client uninstaller.
-# Usage: powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/uninstall.ps1 | iex"
+# Usage: powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/uninstall.ps1)"
 # Removes the application, frees the license seat, and de-registers the kepler command.
 # Env:
 #   KEPLER_INSTALL_DIR   install directory to remove (default: %LOCALAPPDATA%\Programs\KeplerCrew)
@@ -59,7 +59,7 @@ function Uninstall-KeplerCrew {
             Write-Host ''
             if ([Console]::IsInputRedirected) {
                 Write-Host 'Running non-interactively. Re-run with KEPLER_YES=1 to confirm:'
-                Write-Host '  powershell -ExecutionPolicy Bypass -Command "$env:KEPLER_YES=1; irm https://get.keplercrew.com/uninstall.ps1 | iex"'
+                Write-Host '  powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:KEPLER_YES=1; iex (irm https://get.keplercrew.com/uninstall.ps1)"'
                 return
             }
             $answer = Read-Host 'Type yes to continue'
@@ -202,7 +202,7 @@ function Uninstall-KeplerCrew {
         Write-Host ''
         Write-Host 'KeplerCrew uninstalled.'
         Write-Host 'Reinstall any time:'
-        Write-Host '  powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/install.ps1 | iex"'
+        Write-Host '  powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/install.ps1)"'
     }
     catch {
         # Error path safe under iex: do NOT exit (closes customer's console)

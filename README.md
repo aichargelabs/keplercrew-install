@@ -9,14 +9,14 @@ license-gated; the installer scripts themselves are public.
 ### Windows (PowerShell)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/install.ps1)"
 ```
 
 The installer prompts for your license key (input hidden). To run unattended:
 
 ```powershell
 $env:KEPLER_LICENSE_KEY = "<your license key>"
-powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/install.ps1)"
 ```
 
 ### macOS / Linux
@@ -30,7 +30,7 @@ curl -fsSL https://get.keplercrew.com/install.sh | sh
 Re-run the same install command to update in place:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/install.ps1)"
 ```
 
 On macOS/Linux, re-run the installer to update in place:
@@ -72,7 +72,7 @@ support@aichargelabs.com or visit [keplercrew.com](https://keplercrew.com).
 ### Windows (PowerShell)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -Command "irm https://get.keplercrew.com/uninstall.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/uninstall.ps1)"
 ```
 
 ### macOS / Linux
