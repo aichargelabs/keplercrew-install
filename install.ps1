@@ -182,7 +182,12 @@ function Install-KeplerCrew {
         [Net.ServicePointManager]::SecurityProtocol = $currentProtocol
 
         $account = '11cdb180-ce9f-4b8b-82c6-ca59f9b2c512'
-        $api = 'https://api.keygen.sh/v1/accounts/' + $account
+        # Licensing host. Overridable so the same installer can be pointed at the
+        # self-hosted Keygen without republishing: set KEPLER_KEYGEN_BASE to the
+        # API root (no trailing slash), e.g. https://licenses.aichargelabs.com/v1
+        $keygenBase = $env:KEPLER_KEYGEN_BASE
+        if ([string]::IsNullOrWhiteSpace($keygenBase)) { $keygenBase = 'https://api.keygen.sh/v1' }
+        $api = $keygenBase.TrimEnd('/') + '/accounts/' + $account
         $jsonApi = 'application/vnd.api+json'
 
         # 0. Resolve the install directory first -- an existing install supplies
