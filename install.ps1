@@ -182,11 +182,12 @@ function Install-KeplerCrew {
         [Net.ServicePointManager]::SecurityProtocol = $currentProtocol
 
         $account = '11cdb180-ce9f-4b8b-82c6-ca59f9b2c512'
-        # Licensing host. Overridable so the same installer can be pointed at the
-        # self-hosted Keygen without republishing: set KEPLER_KEYGEN_BASE to the
-        # API root (no trailing slash), e.g. https://licenses.aichargelabs.com/v1
-        $keygenBase = $env:KEPLER_KEYGEN_BASE
-        if ([string]::IsNullOrWhiteSpace($keygenBase)) { $keygenBase = 'https://licenses.aichargelabs.com/v1' }
+        # The installer accepts only the supported licensing authority.
+        $keygenBase = 'https://licenses.aichargelabs.com/v1'
+        if (-not [string]::IsNullOrWhiteSpace($env:KEPLER_KEYGEN_BASE) -and
+            $env:KEPLER_KEYGEN_BASE.TrimEnd('/') -cne $keygenBase) {
+            throw 'Unsupported licensing endpoint.'
+        }
         $api = $keygenBase.TrimEnd('/') + '/accounts/' + $account
         $jsonApi = 'application/vnd.api+json'
 
