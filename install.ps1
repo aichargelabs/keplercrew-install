@@ -186,7 +186,7 @@ function Install-KeplerCrew {
         # self-hosted Keygen without republishing: set KEPLER_KEYGEN_BASE to the
         # API root (no trailing slash), e.g. https://licenses.aichargelabs.com/v1
         $keygenBase = $env:KEPLER_KEYGEN_BASE
-        if ([string]::IsNullOrWhiteSpace($keygenBase)) { $keygenBase = 'https://api.keygen.sh/v1' }
+        if ([string]::IsNullOrWhiteSpace($keygenBase)) { $keygenBase = 'https://licenses.aichargelabs.com/v1' }
         $api = $keygenBase.TrimEnd('/') + '/accounts/' + $account
         $jsonApi = 'application/vnd.api+json'
 
