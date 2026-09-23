@@ -553,8 +553,13 @@ function Install-KeplerCrew {
         # 7. Extract to staging dir, validate, then atomic swap.
         Write-Host ('Installing to ' + $installDir + '...')
         $stagingDir = $installDir + '.new-' + $PID
-        New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
-        Expand-Archive -LiteralPath $zipPath -DestinationPath $stagingDir -Force
+        if (Test-Path -LiteralPath $stagingDir) { Remove-Item -Recurse -Force -LiteralPath $stagingDir }
+        # Windows PowerShell 5.1's Expand-Archive fails on archives that contain an
+        # entry larger than 2GB (the bundled assistant model is ~2.7GB) - it produces
+        # an empty output with no error, which would surface as the run.ps1 check
+        # below. Extract via the .NET API instead: it handles zip64 and large entries.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $stagingDir)
         Remove-Item -LiteralPath $zipPath -Force
 
         # Validate run.ps1 exists in extraction
