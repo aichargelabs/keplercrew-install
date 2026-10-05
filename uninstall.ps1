@@ -55,6 +55,7 @@ function Uninstall-KeplerCrew {
             }
             else {
                 Write-Host ('  - KEEP your data: ' + $dataDir)
+                Write-Host '  - remove the downloaded local model (it is fetched again on reinstall)'
             }
             Write-Host ''
             if ([Console]::IsInputRedirected) {
@@ -72,7 +73,7 @@ function Uninstall-KeplerCrew {
         # 2. Stop anything running FROM THIS INSTALL DIR. Match on the executable
         #    path so a second install (or an unrelated process) is never touched.
         $prefix = $installDir.TrimEnd('\') + '\'
-        $running = Get-Process -Name 'kepler-backend', 'kepler-engine', 'kepler' -ErrorAction SilentlyContinue |
+        $running = Get-Process -Name 'kepler-backend', 'kepler-engine', 'kepler', 'llama-server' -ErrorAction SilentlyContinue |
             Where-Object {
                 $pathMatch = $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
                 $moduleMatch = $false
@@ -179,6 +180,13 @@ function Uninstall-KeplerCrew {
         }
         Get-ChildItem -LiteralPath $installParent -Directory -Filter ((Split-Path $installDir -Leaf) + '.new-*') -ErrorAction SilentlyContinue |
             ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+
+        # 5b. The local model is a re-downloadable cache (~2.5 GB), not user data.
+        $modelsDir = Join-Path $dataDir 'models'
+        if ((-not $purge) -and (Test-Path -LiteralPath $modelsDir)) {
+            Remove-Item -LiteralPath $modelsDir -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host ('Removed the downloaded local model: ' + $modelsDir)
+        }
 
         # 6. Data: deleted only on an explicit opt-in.
         if (Test-Path -LiteralPath $dataDir) {

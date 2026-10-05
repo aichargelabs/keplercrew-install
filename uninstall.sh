@@ -45,6 +45,7 @@ if [ "${KEPLER_YES:-}" != "1" ]; then
         echo "  - DELETE your data: $DATA_DIR (projects, cycles, logs)"
     else
         echo "  - KEEP your data: $DATA_DIR"
+        echo "  - remove the downloaded local model (it is fetched again on reinstall)"
     fi
     echo ""
     if [ -r /dev/tty ]; then
@@ -63,7 +64,7 @@ fi
 
 # 2. Stop anything running FROM THIS INSTALL DIR. Matching on the full binary path
 #    means a second install (or an unrelated process) is never touched.
-for binary in "$INSTALL_DIR/backend/kepler-backend" "$INSTALL_DIR/engine/kepler-engine"; do
+for binary in "$INSTALL_DIR/backend/kepler-backend" "$INSTALL_DIR/engine/kepler-engine"     "$INSTALL_DIR/assistant/llama/llama-server"; do
     if pgrep -f "^$binary" >/dev/null 2>&1; then
         echo "Stopping KeplerCrew..."
         pkill -f "^$binary" >/dev/null 2>&1 || true
@@ -107,6 +108,11 @@ rm -rf "$INSTALL_DIR.old" 2>/dev/null || true
 for leftover in "$INSTALL_DIR".new-*; do
     if [ -d "$leftover" ]; then rm -rf "$leftover"; fi
 done
+
+# 4b. The local model is a re-downloadable cache (~2.5 GB), not user data.
+if [ "${KEPLER_PURGE:-}" != "1" ] && [ -d "$DATA_DIR/models" ]; then
+    rm -rf "$DATA_DIR/models" && echo "Removed the downloaded local model: $DATA_DIR/models"
+fi
 
 # 5. Data: deleted only on an explicit opt-in.
 if [ -d "$DATA_DIR" ]; then

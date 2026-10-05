@@ -536,7 +536,7 @@ function Install-KeplerCrew {
         #     Note: powershell.exe hosting run.ps1 cannot be path-matched;
         #     cwd locks are handled by the .old-swap approach.
         $prefix = $installDir.TrimEnd('\') + '\'
-        $running = Get-Process -Name 'kepler-backend', 'kepler-engine', 'kepler' -ErrorAction SilentlyContinue |
+        $running = Get-Process -Name 'kepler-backend', 'kepler-engine', 'kepler', 'llama-server' -ErrorAction SilentlyContinue |
             Where-Object {
                 $pathMatch = $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
                 $moduleMatch = $false
