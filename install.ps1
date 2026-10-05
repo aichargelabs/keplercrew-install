@@ -523,7 +523,12 @@ function Install-KeplerCrew {
 
         # 6. Verify checksum.
         if (-not [string]::IsNullOrWhiteSpace($expected)) {
-            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant()
+            # .NET directly, not Get-FileHash: that cmdlet's module fails to load when
+            # Windows PowerShell inherits a PowerShell 7 PSModulePath (tool-launched shells).
+            $sha = [System.Security.Cryptography.SHA256]::Create()
+            $fs = [System.IO.File]::OpenRead($zipPath)
+            try { $actual = ([System.BitConverter]::ToString($sha.ComputeHash($fs)) -replace '-', '').ToLowerInvariant() }
+            finally { $fs.Dispose(); $sha.Dispose() }
             if ($actual -ne $expected.ToLowerInvariant()) {
                 throw ('Checksum mismatch -- download corrupted. Expected ' + $expected + ' got ' + $actual)
             }
