@@ -64,7 +64,7 @@ fi
 
 # 2. Stop anything running FROM THIS INSTALL DIR. Matching on the full binary path
 #    means a second install (or an unrelated process) is never touched.
-for binary in "$INSTALL_DIR/backend/kepler-backend" "$INSTALL_DIR/engine/kepler-engine"     "$INSTALL_DIR/assistant/llama/llama-server"; do
+for binary in "$INSTALL_DIR/backend/kepler-backend" "$INSTALL_DIR/engine/kepler-engine"     "$INSTALL_DIR/assistant/llama/llama-server" "$INSTALL_DIR/voice/whisper/whisper-server"; do
     if pgrep -f "^$binary" >/dev/null 2>&1; then
         echo "Stopping KeplerCrew..."
         pkill -f "^$binary" >/dev/null 2>&1 || true

@@ -73,7 +73,7 @@ function Uninstall-KeplerCrew {
         # 2. Stop anything running FROM THIS INSTALL DIR. Match on the executable
         #    path so a second install (or an unrelated process) is never touched.
         $prefix = $installDir.TrimEnd('\') + '\'
-        $running = Get-Process -Name 'kepler-backend', 'kepler-engine', 'kepler', 'llama-server' -ErrorAction SilentlyContinue |
+        $running = Get-Process -Name 'kepler-backend', 'kepler-engine', 'kepler', 'llama-server', 'whisper-server' -ErrorAction SilentlyContinue |
             Where-Object {
                 $pathMatch = $_.Path -and $_.Path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
                 $moduleMatch = $false
