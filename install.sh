@@ -227,8 +227,25 @@ semver_gt() {
     return 1
 }
 
+# Resolve this machine's platform before choosing a release. Platform bundles
+# can lag the newest release, so an unpinned install selects the newest
+# published release that actually carries a bundle for this platform.
+os=$(uname -s 2>/dev/null || echo unknown)
+case "$os" in
+    Darwin) platform="darwin" ;;
+    Linux)  platform="linux" ;;
+    *)      printf '%s\n' "Error: unsupported operating system: $os" >&2; exit 1 ;;
+esac
+arch_name=$(uname -m 2>/dev/null || echo unknown)
+case "$arch_name" in
+    x86_64|amd64) arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *)      printf '%s\n' "Error: unsupported architecture on $platform: $arch_name" >&2; exit 1 ;;
+esac
+
 # Extract all stable published versions with their ids.
-# Filter by wanted version if specified, otherwise find latest.
+# Filter by wanted version if specified, otherwise try newest first.
+candidates=""
 if [ -n "$wanted" ]; then
     wanted=$(printf '%s' "$wanted" | sed 's/^v//')
     if [ "$use_python" = "1" ]; then
@@ -254,101 +271,64 @@ for line in sys.stdin:
         printf '%s\n' "To install the latest instead, run:  unset KEPLER_VERSION  and re-run the install command." >&2
         exit 1
     fi
+    candidates="$version"
 else
-    # Find latest version by semver comparison.
-    version=""
+    # Newest first. The artifact probe below skips releases with no bundle
+    # for this platform, so a platform lag does not strand the install.
     if [ "$use_python" = "1" ]; then
-        version=$(printf '%s' "$published" | python3 -c "
+        candidates=$(printf '%s' "$published" | python3 -c "
 import sys, json
 versions = []
 for line in sys.stdin:
     attrs = json.loads(line)
     v = attrs.get('version', '')
-    if v:
+    if v and v not in versions:
         versions.append(v)
-if versions:
-    # Sort by semver descending
-    versions.sort(key=lambda x: [int(p) for p in x.split('.')], reverse=True)
-    print(versions[0])
+versions.sort(key=lambda x: [int(p) for p in x.split('.')], reverse=True)
+print(' '.join(versions))
 ")
     else
-        # Shell fallback: first one from API (which returns newest first after our filters).
-        version=$(printf '%s' "$published" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p' | head -1)
+        # Shell fallback: API order (newest first after our filters), de-duplicated.
+        candidates=$(printf '%s' "$published" | sed -n 's/.*"version"[: ]*"\([^"]*\)".*/\1/p' | awk '!seen[$0]++' | tr '\n' ' ')
     fi
-    if [ -z "$version" ]; then
+    if [ -z "$candidates" ]; then
         printf '%s\n' "Error: no published stable release is available for your license." >&2
         printf '%s\n' "Contact support@aichargelabs.com and quote error RELEASE-NONE-STABLE." >&2
         exit 1
     fi
+    version=$(printf '%s' "$candidates" | awk '{print $1}')
 fi
 
-# 3b. Downgrade guard: refuse if resolved version is lower than installed (unless KEPLER_FORCE=1).
-if [ -n "$INSTALLED" ] && [ "$INSTALLED" != "$version" ]; then
-    if semver_gt "$INSTALLED" "$version"; then
-        if [ "${KEPLER_FORCE:-}" != "1" ]; then
-            printf '%s\n' "Error: downgrade refused: installed $INSTALLED is newer than $version. Set KEPLER_FORCE=1 to allow downgrade." >&2
-            exit 1
-        fi
-        echo "Downgrade allowed by KEPLER_FORCE=1."
-    fi
-fi
+# Downgrade and up-to-date guards run after the platform artifact is
+# resolved below: with no version pin, the selected release is the newest
+# one that carries a bundle for this platform, which may differ from the
+# newest published release overall.
 
-# 3c. Already on the resolved version? Nothing to do.
-if [ "$INSTALLED" = "$version" ] && [ "${KEPLER_FORCE-}" != "1" ]; then
-    echo "KeplerCrew $version is already installed and up to date."
-    echo "Set KEPLER_FORCE=1 to reinstall."
-    exit 0
-fi
-
-if [ -n "$INSTALLED" ]; then
-    if [ "$INSTALLED" = "$version" ]; then
-        echo "Reinstalling KeplerCrew $version..."
-    else
-        echo "Updating KeplerCrew $INSTALLED -> $version..."
-    fi
-fi
-
-# 4. Resolve the platform artifact of that release. License-key auth cannot
-#    LIST artifacts, so the filename follows the release convention.
-os=$(uname -s 2>/dev/null || echo unknown)
-case "$os" in
-    Darwin) platform="darwin" ;;
-    Linux)  platform="linux" ;;
-    *)      printf '%s\n' "Error: unsupported operating system: $os" >&2; exit 1 ;;
-esac
-arch_name=$(uname -m 2>/dev/null || echo unknown)
-case "$arch_name" in
-    x86_64|amd64) arch="x64" ;;
-    aarch64|arm64) arch="arm64" ;;
-    *)      printf '%s\n' "Error: unsupported architecture on $platform: $arch_name" >&2; exit 1 ;;
-esac
-filename="KeplerCrew-$platform-$arch-$version.tar.gz"
-
-# The selected release record contains the id needed by the artifact endpoint.
-# Use python3 for order-independent extraction when available.
-if [ "$use_python" = "1" ]; then
-    release_id=$(printf '%s' "$published" | python3 -c "
+# 4. Resolve the platform artifact. License-key auth cannot LIST artifacts,
+#    so the filename follows the release convention and each candidate is
+#    probed in newest-first order until one carries this platform's bundle.
+release_id_for() {
+    candidate="$1"
+    found=""
+    if [ "$use_python" = "1" ]; then
+        found=$(printf '%s' "$published" | python3 -c "
 import sys, json
 for line in sys.stdin:
     attrs = json.loads(line)
-    if attrs.get('version') == '$version':
+    if attrs.get('version') == sys.argv[1]:
         print(attrs.get('id', ''))
         break
-" 2>/dev/null) || release_id=""
-fi
-
-if [ -z "$release_id" ]; then
-    # Shell fallback: records start at each top-level id; the release's own record
-    # carries its attributes (version/status), relationship ids do not.
-    release_id=$(printf '%s' "$releases" | awk -v ver="$version" '
-        BEGIN { RS="\"id\":\""; FS="\"" }
-        NR>1 && index($0, "\"version\":\"" ver "\"") && index($0, "\"status\":\"PUBLISHED\"") { print $1; exit }')
-fi
-
-if [ -z "$release_id" ]; then
-    printf '%s\n' "Error: release $version has no id." >&2
-    exit 1
-fi
+" "$candidate" 2>/dev/null) || found=""
+    fi
+    if [ -z "$found" ]; then
+        # Shell fallback: records start at each top-level id; the release's own record
+        # carries its attributes (version/status), relationship ids do not.
+        found=$(printf '%s' "$releases" | awk -v ver="$candidate" '
+            BEGIN { RS="\"id\":\""; FS="\"" }
+            NR>1 && index($0, "\"version\":\"" ver "\"") && index($0, "\"status\":\"PUBLISHED\"") { print $1; exit }')
+    fi
+    printf '%s' "$found"
+}
 
 # Create staging directory for atomic update.
 staging_dir="${INSTALL_DIR}.new-$$"
@@ -361,6 +341,18 @@ cleanup() {
     rm -rf "$staging_dir" 2>/dev/null || true
 }
 trap cleanup EXIT HUP INT TERM
+
+first_candidate=$(printf '%s' "$candidates" | awk '{print $1}')
+selected=""
+skipped_newer=""
+for candidate in $candidates; do
+    version="$candidate"
+    filename="KeplerCrew-$platform-$arch-$version.tar.gz"
+    release_id=$(release_id_for "$candidate")
+    if [ -z "$release_id" ]; then
+        printf '%s\n' "Error: release $version has no id." >&2
+        exit 1
+    fi
 
 # Fetch artifact metadata.
 curl_rc=0
@@ -375,14 +367,56 @@ fi
 
 # Parse HTTP status code (BSD-compatible: no GNU sed alternation).
 status=$(sed -n '1s/^HTTP[^ ]* \([0-9][0-9][0-9]\).*/\1/p' "$meta_headers")
-if [ "$status" -ge 400 ] 2>/dev/null; then
-    echo "Release $version has no $platform/$arch bundle yet."
-    echo "Windows install: powershell -ExecutionPolicy Bypass -Command \"irm https://get.keplercrew.com/install.ps1 | iex\""
-    exit 0
+if [ "$status" = "404" ]; then
+    if [ -n "$wanted" ]; then
+        echo "Release $version has no $platform/$arch bundle yet."
+        echo "Windows install: powershell -ExecutionPolicy Bypass -Command \"irm https://get.keplercrew.com/install.ps1 | iex\""
+        exit 0
+    fi
+    skipped_newer="$skipped_newer $version"
+    continue
 fi
 if [ "$status" != "303" ]; then
     printf '%s\n' "Error: artifact endpoint returned HTTP $status for $filename." >&2
     exit 1
+fi
+selected="1"
+break
+done
+
+if [ -z "$selected" ]; then
+    echo "No published release has a $platform/$arch bundle yet."
+    echo "Windows install: powershell -ExecutionPolicy Bypass -Command \"irm https://get.keplercrew.com/install.ps1 | iex\""
+    exit 0
+fi
+if [ -n "$skipped_newer" ]; then
+    echo "Release $first_candidate has no $platform/$arch bundle yet; using latest available for $platform/$arch: $version."
+fi
+
+# 4b. Downgrade guard: refuse if resolved version is lower than installed (unless KEPLER_FORCE=1).
+if [ -n "$INSTALLED" ] && [ "$INSTALLED" != "$version" ]; then
+    if semver_gt "$INSTALLED" "$version"; then
+        if [ "${KEPLER_FORCE:-}" != "1" ]; then
+            printf '%s\n' "Error: downgrade refused: installed $INSTALLED is newer than $version. Set KEPLER_FORCE=1 to allow downgrade." >&2
+            exit 1
+        fi
+        echo "Downgrade allowed by KEPLER_FORCE=1."
+    fi
+fi
+
+# Already on the resolved version? Nothing to do.
+if [ "$INSTALLED" = "$version" ] && [ "${KEPLER_FORCE-}" != "1" ]; then
+    echo "KeplerCrew $version is already installed and up to date."
+    echo "Set KEPLER_FORCE=1 to reinstall."
+    exit 0
+fi
+
+if [ -n "$INSTALLED" ]; then
+    if [ "$INSTALLED" = "$version" ]; then
+        echo "Reinstalling KeplerCrew $version..."
+    else
+        echo "Updating KeplerCrew $INSTALLED -> $version..."
+    fi
 fi
 
 # Extract Location header and checksum (BSD-compatible parsing).
