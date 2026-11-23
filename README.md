@@ -25,6 +25,42 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.kep
 curl -fsSL https://get.keplercrew.com/install.sh | sh
 ```
 
+## Beta channel
+
+The beta installer selects the newest published stable or beta release with a
+bundle for your OS/arch. Stable install commands are unchanged.
+
+Windows (PowerShell):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iex (irm https://get.keplercrew.com/beta/install.ps1)"
+```
+
+macOS / Linux:
+
+```sh
+curl -fsSL https://get.keplercrew.com/beta/install.sh | sh
+```
+
+The installer records the selected channel in `channel.txt`. By default,
+`KEPLER_CHANNEL=beta` selects from stable and beta releases. Set
+`KEPLER_CHANNEL=stable` to select stable releases only.
+
+To return to stable, rerun the beta installer with stable-only selection and
+`KEPLER_FORCE=1`.
+
+Windows (PowerShell):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:KEPLER_CHANNEL='stable'; $env:KEPLER_FORCE=1; iex (irm https://get.keplercrew.com/beta/install.ps1)"
+```
+
+macOS / Linux:
+
+```sh
+curl -fsSL https://get.keplercrew.com/beta/install.sh | KEPLER_CHANNEL=stable KEPLER_FORCE=1 sh
+```
+
 ## Updating
 
 Re-run the same install command to update in place:
