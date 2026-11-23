@@ -4,13 +4,25 @@ on:
   pull_request:
     paths:
       - install.ps1
+      - beta/install.ps1
+      - beta/install.sh
       - tests/verify-install.ps1
+      - tests/verify-beta-order.ps1
+      - tests/test_beta_channel.py
+      - tests/test_beta_parity.py
+      - tests/test_stable_frozen.py
       - .github/workflows/install-ps1.yml
   push:
     branches: [main]
     paths:
       - install.ps1
+      - beta/install.ps1
+      - beta/install.sh
       - tests/verify-install.ps1
+      - tests/verify-beta-order.ps1
+      - tests/test_beta_channel.py
+      - tests/test_beta_parity.py
+      - tests/test_stable_frozen.py
 
 permissions:
   contents: read
@@ -23,3 +35,23 @@ jobs:
       - name: Parse installer and enforce security invariants
         shell: powershell
         run: ./tests/verify-install.ps1 -InstallerPath ./install.ps1
+      - name: Verify beta installer with the same security invariants
+        shell: powershell
+        run: |
+          Copy-Item ./README.md ./beta/README.md
+          ./tests/verify-install.ps1 -InstallerPath ./beta/install.ps1
+      - name: Verify beta PowerShell version ordering
+        shell: powershell
+        run: ./tests/verify-beta-order.ps1 -InstallerPath ./beta/install.ps1
+
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pytest
+        run: python -m pip install pytest
+      - name: Run installer tests
+        run: python -m pytest tests -q
