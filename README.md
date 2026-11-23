@@ -47,7 +47,7 @@ reinstall even when already on the latest version, set `KEPLER_FORCE=1`.
 | Variable | Effect |
 | --- | --- |
 | `KEPLER_LICENSE_KEY` | License key (skips the prompt; stored key is reused on update) |
-| `KEPLER_VERSION` | Pin a version, e.g. `1.0.0` (default: latest) |
+| `KEPLER_VERSION` | Pin a version, e.g. `1.0.0` (default: latest release with a bundle for your OS/arch) |
 | `KEPLER_DRY_RUN=1` | Resolve and print the release without downloading |
 | `KEPLER_INSTALL_DIR` | Install directory (default: `%LOCALAPPDATA%\Programs\KeplerCrew` on Windows, `~/.local/share/keplercrew` on Unix) |
 | `KEPLER_NO_LAUNCH=1` | Install without launching |
@@ -56,7 +56,7 @@ reinstall even when already on the latest version, set `KEPLER_FORCE=1`.
 ## What the installer does
 
 - Validates your license key before downloading anything.
-- Downloads the latest bundle your license is entitled to, over HTTPS.
+- Downloads the latest bundle for your OS/arch that your license is entitled to, over HTTPS.
 - Verifies the SHA256 checksum against the release metadata.
 - Extracts to a per-user directory — no administrator access required.
 - Stores your license key locally with user-only file permissions.
