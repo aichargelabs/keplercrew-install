@@ -201,6 +201,9 @@ semver_gt() {
     if [ "$v1" = "$v2" ]; then
         return 1
     fi
+    # A beta install is tagged X.Y.Z-beta.N: compare its X.Y.Z, so stable X.Y.Z replaces its own betas.
+    v1=${v1%%-*}
+    v2=${v2%%-*}
     # Split and compare using POSIX shell (IFS-split, no arrays)
     v1_major=$(printf '%s' "$v1" | cut -d. -f1)
     v1_minor=$(printf '%s' "$v1" | cut -d. -f2)

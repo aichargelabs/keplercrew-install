@@ -221,4 +221,9 @@ $failed = @($checks.GetEnumerator() | Where-Object { -not $_.Value })
 $checks.GetEnumerator() | ForEach-Object { '{0}={1}' -f $_.Key, $_.Value }
 $profileFailures + $pipeFailures | ForEach-Object { Write-Error ('unsafe published one-liner -> ' + $_) }
 if ($failed.Count -gt 0) { exit 2 }
+# The stable installer carries the downgrade guard: run its cases here, in the step CI already runs.
+if ($text -match 'function Test-KeplerDowngrade') {
+    & (Join-Path $PSScriptRoot 'verify-stable-downgrade.ps1') -InstallerPath $InstallerPath
+    if ($LASTEXITCODE -ne 0) { exit 3 }
+}
 exit 0

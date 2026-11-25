@@ -162,6 +162,22 @@ function Show-KeplerStartFailureGuidance {
     Write-Host '  No firewall change is needed: KeplerCrew listens on 127.0.0.1 only.'
 }
 
+function Test-KeplerDowngrade {
+    # True when the installed X.Y.Z is higher than the resolved X.Y.Z. A prerelease tag
+    # (8.6.14-beta.22) counts as its X.Y.Z. An unreadable version is never a downgrade.
+    param([string]$Installed, [string]$Version)
+    $pattern = '^v?(\d+)\.(\d+)\.(\d+)'
+    if ($Installed -notmatch $pattern) { return $false }
+    $a = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+    if ($Version -notmatch $pattern) { return $false }
+    $b = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+    for ($i = 0; $i -lt 3; $i++) {
+        if ($a[$i] -gt $b[$i]) { return $true }
+        if ($a[$i] -lt $b[$i]) { return $false }
+    }
+    return $false
+}
+
 function Install-KeplerCrew {
     $ErrorActionPreference = 'Stop'
     $ProgressPreference = 'SilentlyContinue'
@@ -360,12 +376,8 @@ function Install-KeplerCrew {
 
         # 3b. Downgrade guard: refuse if resolved version is lower than installed (unless KEPLER_FORCE=1)
         if (-not [string]::IsNullOrWhiteSpace($installed)) {
-            $installedParts = $installed.Split('.')
-            $versionParts = $version.Split('.')
-            $isDowngrade = $false
-            if ([int]$installedParts[0] -gt [int]$versionParts[0]) { $isDowngrade = $true }
-            elseif ([int]$installedParts[0] -eq [int]$versionParts[0] -and [int]$installedParts[1] -gt [int]$versionParts[1]) { $isDowngrade = $true }
-            elseif ([int]$installedParts[0] -eq [int]$versionParts[0] -and [int]$installedParts[1] -eq [int]$versionParts[1] -and [int]$installedParts[2] -gt [int]$versionParts[2]) { $isDowngrade = $true }
+            # A beta install is tagged X.Y.Z-beta.N; compare its X.Y.Z, so stable X.Y.Z replaces its own betas.
+            $isDowngrade = Test-KeplerDowngrade -Installed $installed -Version $version
 
             if ($isDowngrade -and $env:KEPLER_FORCE -ne '1') {
                 throw ('Downgrade refused: installed ' + $installed + ' is newer than ' + $version + '. Set KEPLER_FORCE=1 to allow downgrade.')

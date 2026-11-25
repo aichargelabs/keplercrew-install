@@ -6,8 +6,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 # Ceilings track the measured behavioral diffs with a few lines of headroom.
-PS1_CHANGED_LINE_CEILING = 182
-SH_CHANGED_LINE_CEILING = 167
+PS1_CHANGED_LINE_CEILING = 190
+SH_CHANGED_LINE_CEILING = 170
 
 
 def changed_line_count(stable, beta):

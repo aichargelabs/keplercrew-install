@@ -209,6 +209,15 @@ class BetaChannelTest(unittest.TestCase):
     def test_stable_installer_still_ignores_beta(self):
         self.assert_version(self.run_installer(MIXED, script="install.sh"), "8.6.13")
 
+    def test_stable_installer_replaces_its_own_beta(self):
+        result = self.run_installer(MIXED, script="install.sh", installed="8.6.13-beta.4")
+        self.assert_version(result, "8.6.13")
+
+    def test_stable_installer_refuses_to_leave_a_newer_beta(self):
+        result = self.run_installer(MIXED, script="install.sh", installed="8.6.14-beta.2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("downgrade refused", result.stderr)
+
     def test_shell_fallback_uses_the_same_ordering(self):
         releases = [release("8.6.14-beta.9", "beta"), release("8.6.14-beta.10", "beta")]
         self.assert_version(self.run_installer(releases, force_shell=True), "8.6.14-beta.10")
