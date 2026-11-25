@@ -223,6 +223,7 @@ $profileFailures + $pipeFailures | ForEach-Object { Write-Error ('unsafe publish
 if ($failed.Count -gt 0) { exit 2 }
 # The stable installer carries the downgrade guard: run its cases here, in the step CI already runs.
 if ($text -match 'function Test-KeplerDowngrade') {
+    $global:LASTEXITCODE = 0
     & (Join-Path $PSScriptRoot 'verify-stable-downgrade.ps1') -InstallerPath $InstallerPath
     if ($LASTEXITCODE -ne 0) { exit 3 }
 }

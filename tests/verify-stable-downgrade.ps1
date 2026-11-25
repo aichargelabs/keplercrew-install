@@ -40,3 +40,4 @@ foreach ($case in $cases) {
 }
 if ($failed) { exit 1 }
 Write-Host ('stable downgrade guard: ' + $cases.Count + ' cases pass')
+exit 0
