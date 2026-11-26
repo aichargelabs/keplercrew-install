@@ -6,10 +6,10 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 
 # bump only on a deliberate stable installer change. CI runs this file on every installer push.
-# 2026-11-25: bumped for the downgrade guard that reads a beta-tagged install as its X.Y.Z.
+# 2026-11-26: bumped for the self-update and live-run guards.
 FROZEN_SHA256 = {
-    "install.ps1": "2c8996460795fb769f4c0f7707bcfb8e1416617a657cbfc8e3ba4569682a1c38",
-    "install.sh": "33ecc59b9ee3a5a53d53ddeffd2e951d13f1efa9c292d14a934d53031e65a077",
+    "install.ps1": "0b4b2636672b0c2cce0706b4a5a727e71501ce9e08cf9e5e69c6d5a6976d537e",
+    "install.sh": "5dc231111380b12d81b0d61a14025a3f73a2cb67b51ba0b98146c74d21232ea2",
 }
 
 

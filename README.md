@@ -135,3 +135,5 @@ If that has already happened, email support@aichargelabs.com to release it.
 | `KEPLER_INSTALL_DIR` | Uninstall from a non-default install directory |
 
 KeplerCrew is developed by aichargelabs.
+
+Installers refuse to update Kepler from inside a Kepler task, or while live runs are active. Let runs finish first, or pass `--force` (PowerShell: `-Force`) to proceed. The inside-task guard has no override.

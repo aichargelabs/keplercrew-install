@@ -13,6 +13,37 @@
 
 set -eu
 
+# Refuse self-updates and protect live runs before any prompt, download, or removal.
+if [ "${KEPLER_INSIDE_RUN:-}" = "1" ]; then
+    echo "This is running inside a Kepler task. Updating Kepler from a task would stop every run. Run the installer from your own terminal." >&2
+    exit 3
+fi
+force=0
+for arg in "$@"; do [ "$arg" = "--force" ] && force=1; done
+_data_dir="${APEX_HOME:-$HOME/.kepler-trial}"
+_busy_runs=$(python3 - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
+import glob,json,os,sys,errno
+terminal={'completed','failed','killed','done','idle','error','halted'}
+for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
+    try:
+        with open(path,encoding='utf-8') as f: rec=json.load(f)
+        pid=int(rec.get('pid') or 0)
+        status=str(rec.get('apex_status') or '').lower()
+        if status not in terminal and pid>0:
+            try: os.kill(pid,0)
+            except OSError as e:
+                if e.errno == errno.EPERM: print(str(rec.get('title') or rec.get('cycle_id') or os.path.basename(path)[:-5]))
+            else:
+                print(str(rec.get('title') or rec.get('cycle_id') or os.path.basename(path)[:-5]))
+    except Exception: pass
+PYGUARD
+)
+if [ -n "$_busy_runs" ] && [ "$force" != "1" ]; then
+    echo "Kepler has live runs; let them finish or pass --force:" >&2
+    printf '%s\n' "$_busy_runs" >&2
+    exit 3
+fi
+
 ACCOUNT="11cdb180-ce9f-4b8b-82c6-ca59f9b2c512"
 # The installer accepts only the supported licensing authority.
 KEYGEN_BASE="https://licenses.aichargelabs.com/v1"

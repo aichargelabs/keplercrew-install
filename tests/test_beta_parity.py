@@ -5,8 +5,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Ceilings track the measured behavioral diffs with a few lines of headroom.
-PS1_CHANGED_LINE_CEILING = 230
+# Ceilings track measured diffs; PS1 includes the new installer guard in both channels.
+PS1_CHANGED_LINE_CEILING = 270
 SH_CHANGED_LINE_CEILING = 210
 
 

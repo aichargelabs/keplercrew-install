@@ -12,6 +12,41 @@
 #   security policy is changed. SAC-enabled machines install signed bundles only.
 # Author: aichargelabs.
 
+param([switch]$Force)
+
+function Test-KeplerInstallerGuard {
+    param([switch]$Force)
+    if ($env:KEPLER_INSIDE_RUN -eq '1') {
+        [Console]::Error.WriteLine('This is running inside a Kepler task. Updating Kepler from a task would stop every run. Run the installer from your own terminal.')
+        exit 3
+    }
+    $dataDir = $env:APEX_HOME
+    if ([string]::IsNullOrWhiteSpace($dataDir)) { $dataDir = Join-Path $env:USERPROFILE '.kepler-trial' }
+    $liveDir = Join-Path $dataDir 'state/live'
+    $busy = @()
+    try {
+        foreach ($file in (Get-ChildItem -LiteralPath $liveDir -Filter '*.json' -File -ErrorAction Stop)) {
+            try {
+                $record = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+                $status = [string]$record.apex_status
+                $pidValue = 0
+                if ($null -ne $record.pid) { $pidValue = [int]$record.pid }
+                if (@('completed','failed','killed','done','idle','error','halted') -notcontains $status.ToLowerInvariant() -and $pidValue -gt 0) {
+                    try { $null = Get-Process -Id $pidValue -ErrorAction Stop; $busy += [string]$file.BaseName
+                    if (-not [string]::IsNullOrWhiteSpace([string]$record.title)) { $busy[-1] = [string]$record.title } elseif (-not [string]::IsNullOrWhiteSpace([string]$record.cycle_id)) { $busy[-1] = [string]$record.cycle_id } } catch { }
+                }
+            } catch { }
+        }
+    } catch { }
+    if ($busy.Count -gt 0 -and -not $Force) {
+        [Console]::Error.WriteLine('Kepler has live runs; let them finish or pass -Force:')
+        foreach ($run in $busy) { [Console]::Error.WriteLine($run) }
+        exit 3
+    }
+}
+
+Test-KeplerInstallerGuard -Force:$Force
+
 # Runtime PS version check (no #Requires to avoid breaking irm|iex on some hosts)
 if ($PSVersionTable.PSVersion.Major -lt 5) {
     Write-Host 'PowerShell 5.0 or later is required. You are running version ' $PSVersionTable.PSVersion
