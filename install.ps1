@@ -27,11 +27,12 @@ function Test-KeplerInstallerGuard {
         foreach ($file in (Get-ChildItem -LiteralPath $liveDir -Filter '*.json' -File -ErrorAction Stop)) {
             try {
                 $record = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+                if (((Get-Date) - $file.LastWriteTimeUtc).TotalSeconds -gt 86400) { continue }
                 $status = [string]$record.apex_status
                 $pidValue = 0
                 if ($null -ne $record.pid) { $pidValue = [int]$record.pid }
                 if (@('completed','failed','killed','done','idle','error','halted') -notcontains $status.ToLowerInvariant() -and $pidValue -gt 0) {
-                    try { $null = Get-Process -Id $pidValue -ErrorAction Stop; $busy += [string]$file.BaseName
+                    try { $process = Get-Process -Id $pidValue -ErrorAction Stop; if ($null -ne $record.pid_create_time -and [math]::Abs(($process.StartTime.ToUniversalTime() - [DateTimeOffset]::FromUnixTimeSeconds([long]$record.pid_create_time).UtcDateTime).TotalSeconds) -gt 2) { continue }; $busy += [string]$file.BaseName
                     if (-not [string]::IsNullOrWhiteSpace([string]$record.title)) { $busy[-1] = [string]$record.title } elseif (-not [string]::IsNullOrWhiteSpace([string]$record.cycle_id)) { $busy[-1] = [string]$record.cycle_id } } catch { }
                 }
             } catch { }

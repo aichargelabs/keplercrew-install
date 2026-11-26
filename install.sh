@@ -57,10 +57,18 @@ terminal={'completed','failed','killed','done','idle','error','halted'}
 for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
     try:
         with open(path,encoding='utf-8') as f: rec=json.load(f)
+        if os.path.getmtime(path) < __import__('time').time()-86400: continue
         pid=int(rec.get('pid') or 0)
         status=str(rec.get('apex_status') or '').lower()
         if status not in terminal and pid>0:
-            try: os.kill(pid,0)
+            try:
+                os.kill(pid,0)
+                recorded=rec.get('pid_create_time')
+                if recorded is not None:
+                    try:
+                        import psutil
+                        if abs(psutil.Process(pid).create_time()-float(recorded)) > 2: continue
+                    except ImportError: pass
             except OSError as e:
                 if e.errno == errno.EPERM: print(str(rec.get('title') or rec.get('cycle_id') or os.path.basename(path)[:-5]))
             else:
