@@ -13,8 +13,7 @@ param([switch]$Force)
 function Test-KeplerInstallerGuard {
     param([switch]$Force)
     if ($env:KEPLER_INSIDE_RUN -eq '1') {
-        [Console]::Error.WriteLine('This is running inside a Kepler task. Updating Kepler from a task would stop every run. Run the installer from your own terminal.')
-        exit 3
+        throw 'This is running inside a Kepler task. Updating Kepler from a task would stop every run. Run the installer from your own terminal.'
     }
     $dataDir = $env:APEX_HOME
     if ([string]::IsNullOrWhiteSpace($dataDir)) { $dataDir = Join-Path $env:USERPROFILE '.kepler-trial' }
@@ -34,14 +33,23 @@ function Test-KeplerInstallerGuard {
             } catch { }
         }
     } catch { }
-    if ($busy.Count -gt 0 -and -not $Force) {
-        [Console]::Error.WriteLine('Kepler has live runs; let them finish or pass -Force:')
-        foreach ($run in $busy) { [Console]::Error.WriteLine($run) }
-        exit 3
+    if ($busy.Count -gt 0 -and -not $Force -and $env:KEPLER_FORCE_RUNNING -ne '1') {
+        throw (('Kepler has live runs; let them finish first, or override with -Force or KEPLER_FORCE_RUNNING=1:') + [Environment]::NewLine + ($busy -join [Environment]::NewLine))
     }
 }
 
-Test-KeplerInstallerGuard -Force:$Force
+try {
+    Test-KeplerInstallerGuard -Force:$Force
+}
+catch {
+    # Refused. Under iex the calling shell has to stay open with the message on
+    # screen, so there is no exit here. A script started with -File runs in its
+    # own process and sets the exit code there.
+    $host.UI.WriteErrorLine($_.Exception.Message)
+    $global:LASTEXITCODE = 3
+    if (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) { exit 3 }
+    return
+}
 
 # Runtime PS version check (no #Requires to avoid breaking irm|iex on some hosts)
 if ($PSVersionTable.PSVersion.Major -lt 5) {

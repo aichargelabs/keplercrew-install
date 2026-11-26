@@ -88,6 +88,7 @@ reinstall even when already on the latest version, set `KEPLER_FORCE=1`.
 | `KEPLER_INSTALL_DIR` | Install directory (default: `%LOCALAPPDATA%\Programs\KeplerCrew` on Windows, `~/.local/share/keplercrew` on Unix) |
 | `KEPLER_NO_LAUNCH=1` | Install without launching |
 | `KEPLER_FORCE=1` | Reinstall even when already on the resolved version |
+| `KEPLER_FORCE_RUNNING=1` | Update or uninstall even while runs are live |
 
 ## What the installer does
 
@@ -136,4 +137,4 @@ If that has already happened, email support@aichargelabs.com to release it.
 
 KeplerCrew is developed by aichargelabs.
 
-Installers refuse to update Kepler from inside a Kepler task, or while live runs are active. Let runs finish first, or pass `--force` (PowerShell: `-Force`) to proceed. The inside-task guard has no override.
+Installers refuse to update Kepler from inside a Kepler task, or while live runs are active. Let the runs finish first, or override the live-run check with `--force` (PowerShell: `-Force`) or with `KEPLER_FORCE_RUNNING=1`. A piped one-liner takes no argument, so use `curl -fsSL https://get.keplercrew.com/install.sh | sh -s -- --force`, or set `KEPLER_FORCE_RUNNING=1`. The inside-task guard has no override.

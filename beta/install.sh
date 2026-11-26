@@ -15,6 +15,31 @@
 
 set -eu
 
+# Fallback live-run check for machines without python3: read the pid and the
+# apex_status with grep/sed and test the pid with kill -0.
+kepler_busy_runs_without_python() {
+    _live_dir="$1"
+    for _file in "$_live_dir"/*.json; do
+        [ -f "$_file" ] || continue
+        _pid=$(grep '"pid"' "$_file" 2>/dev/null | sed -n '1{s/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p;}')
+        [ -n "$_pid" ] || continue
+        _status=$(grep '"apex_status"' "$_file" 2>/dev/null | sed -n '1{s/.*"apex_status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;}')
+        if printf '%s' "$_status" | grep -qiE '^(completed|failed|killed|done|idle|error|halted)$'; then
+            continue
+        fi
+        kill -0 "$_pid" 2>/dev/null || continue
+        _name=$(grep '"title"' "$_file" 2>/dev/null | sed -n '1{s/.*"title"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;}')
+        if [ -z "$_name" ]; then
+            _name=$(grep '"cycle_id"' "$_file" 2>/dev/null | sed -n '1{s/.*"cycle_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;}')
+        fi
+        if [ -z "$_name" ]; then
+            _name="${_file##*/}"
+            _name="${_name%.json}"
+        fi
+        printf '%s\n' "$_name"
+    done
+}
+
 # Refuse self-updates and protect live runs before any prompt, download, or removal.
 if [ "${KEPLER_INSIDE_RUN:-}" = "1" ]; then
     echo "This is running inside a Kepler task. Updating Kepler from a task would stop every run. Run the installer from your own terminal." >&2
@@ -22,8 +47,13 @@ if [ "${KEPLER_INSIDE_RUN:-}" = "1" ]; then
 fi
 force=0
 for arg in "$@"; do [ "$arg" = "--force" ] && force=1; done
+# A piped one-liner (curl ... | sh) takes no argument: use sh -s -- --force there.
+# The environment variable works in every form and never applies to the
+# inside-task refusal above.
+if [ "${KEPLER_FORCE_RUNNING:-}" = "1" ]; then force=1; fi
 _data_dir="${APEX_HOME:-$HOME/.kepler-trial}"
-_busy_runs=$(python3 - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
+if command -v python3 >/dev/null 2>&1; then
+    _busy_runs=$(python3 - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
 import glob,json,os,sys,errno
 terminal={'completed','failed','killed','done','idle','error','halted'}
 for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
@@ -40,8 +70,11 @@ for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
     except Exception: pass
 PYGUARD
 )
+else
+    _busy_runs=$(kepler_busy_runs_without_python "$_data_dir/state/live")
+fi
 if [ -n "$_busy_runs" ] && [ "$force" != "1" ]; then
-    echo "Kepler has live runs; let them finish or pass --force:" >&2
+    echo "Kepler has live runs; let them finish first, or override with --force or KEPLER_FORCE_RUNNING=1:" >&2
     printf '%s\n' "$_busy_runs" >&2
     exit 3
 fi

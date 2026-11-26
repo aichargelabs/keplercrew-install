@@ -1,5 +1,7 @@
 import json
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -7,6 +9,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ["install.sh", "beta/install.sh", "uninstall.sh"]
+PS1_SCRIPTS = ["install.ps1", "beta/install.ps1", "uninstall.ps1"]
+# The shell fallback needs only these tools when python3 is missing.
+FALLBACK_TOOLS = ["grep", "sed"]
 
 
 class RunningGuardTest(unittest.TestCase):
@@ -62,3 +67,68 @@ class RunningGuardTest(unittest.TestCase):
             env = {**os.environ, "APEX_HOME": home, "KEPLER_INSTALL_DIR": str(Path(home) / "missing-install")}
             result = subprocess.run(["sh", str(ROOT / "install.sh"), "--force"], env=env, text=True, capture_output=True, timeout=20)
             self.assertNotEqual(result.returncode, 3, result.stdout + result.stderr)
+
+    def test_force_running_environment_goes_past_the_guard(self):
+        for script in SCRIPTS:
+            with self.subTest(script=script), tempfile.TemporaryDirectory() as home:
+                self.add_record(home, os.getpid())
+                env = {**os.environ, "APEX_HOME": home, "KEPLER_INSTALL_DIR": str(Path(home) / "missing-install"), "KEPLER_FORCE_RUNNING": "1"}
+                result = subprocess.run(["sh", str(ROOT / script)], env=env, text=True, capture_output=True, timeout=20)
+                self.assertNotEqual(result.returncode, 3, result.stdout + result.stderr)
+
+    def test_force_running_environment_does_not_override_the_inside_run_guard(self):
+        for script in SCRIPTS:
+            result = self.run_script(script, KEPLER_INSIDE_RUN="1", KEPLER_FORCE_RUNNING="1")
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            self.assertIn("This is running inside a Kepler task", result.stdout + result.stderr)
+
+    def test_refusal_names_both_override_forms(self):
+        for script in SCRIPTS:
+            with self.subTest(script=script), tempfile.TemporaryDirectory() as home:
+                self.add_record(home, os.getpid())
+                env = {**os.environ, "APEX_HOME": home, "KEPLER_INSTALL_DIR": str(Path(home) / "missing-install")}
+                result = subprocess.run(["sh", str(ROOT / script)], env=env, text=True, capture_output=True, timeout=20)
+                self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                self.assertIn("--force", result.stdout + result.stderr)
+                self.assertIn("KEPLER_FORCE_RUNNING=1", result.stdout + result.stderr)
+
+    def test_busy_run_is_refused_without_python3(self):
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as bindir:
+            for tool in FALLBACK_TOOLS:
+                found = shutil.which(tool)
+                self.assertIsNotNone(found, tool)
+                os.symlink(found, os.path.join(bindir, tool))
+            kill = shutil.which("kill")
+            if kill:
+                os.symlink(kill, os.path.join(bindir, "kill"))
+            self.add_record(home, os.getpid())
+            live = Path(home) / "state" / "live"
+            (live / "cycle-done.json").write_text(json.dumps({"apex_status": "completed", "pid": os.getpid(), "title": "finished run"}))
+            env = {"PATH": bindir, "HOME": home, "APEX_HOME": home, "KEPLER_INSTALL_DIR": str(Path(home) / "missing-install")}
+            result = subprocess.run(["/bin/sh", str(ROOT / "install.sh")], env=env, text=True, capture_output=True, timeout=20)
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            self.assertIn("guard test", result.stdout + result.stderr)
+            self.assertNotIn("finished run", result.stdout + result.stderr)
+
+    def test_powershell_guard_function_never_exits(self):
+        for script in PS1_SCRIPTS:
+            with self.subTest(script=script):
+                text = (ROOT / script).read_text()
+                start = text.index("function Test-KeplerInstallerGuard")
+                body = text[start:text.index("\n}\n", start)]
+                self.assertNotRegex(body, r"(?m)^\s*exit\b")
+
+    def test_powershell_exits_only_in_file_mode(self):
+        for script in PS1_SCRIPTS:
+            with self.subTest(script=script):
+                text = (ROOT / script).read_text()
+                exit_lines = [line for line in text.splitlines()
+                              if re.search(r"(?<![\w$])exit\b", line) and not line.strip().startswith("#")]
+                self.assertTrue(exit_lines, script)
+                for line in exit_lines:
+                    self.assertIn("$PSCommandPath", line, f"{script}: exit outside the -File branch: {line}")
+
+    def test_every_installer_names_the_environment_override(self):
+        for script in SCRIPTS + PS1_SCRIPTS:
+            with self.subTest(script=script):
+                self.assertIn("KEPLER_FORCE_RUNNING", (ROOT / script).read_text())
