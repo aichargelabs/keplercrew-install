@@ -7,6 +7,7 @@
 #   KEPLER_VERSION      optional version such as 1.0.0-beta.1 (default: latest)
 #   KEPLER_CHANNEL      beta (default: stable and beta releases) or stable (stable only)
 #   KEPLER_DRY_RUN      set to 1 to resolve and print the release without downloading
+#   KEPLER_ACCEPT_STABLE set to 1 to install stable without asking when the license has no beta access
 #   KEPLER_INSTALL_DIR  optional install directory (default: ~/.local/share/keplercrew or $XDG_DATA_HOME/keplercrew)
 #   KEPLER_NO_LAUNCH    set to 1 to skip launching after install
 #   KEPLER_FORCE        set to 1 to reinstall even when already on the resolved version
@@ -211,6 +212,37 @@ if [ -z "$published" ]; then
     printf '%s\n' "This is a license configuration problem, not a problem with your machine." >&2
     printf '%s\n' "Contact support@aichargelabs.com and quote error RELEASE-NONE-BETA." >&2
     exit 1
+fi
+
+# A license without beta access is shown stable releases only. Ask before the beta
+# command installs stable. An install already on beta is the normal update path.
+if [ "$INSTALL_CHANNEL" = "beta" ] && [ -z "${KEPLER_VERSION-}" ] && \
+   ! printf '%s' "$published" | grep -Eq '"channel": *"beta"'; then
+    installed_channel=$(cat "$INSTALL_DIR/channel.txt" 2>/dev/null || echo "")
+    case "$INSTALLED" in *-beta.*) installed_channel="beta" ;; esac
+    if [ "$installed_channel" != "beta" ]; then
+        echo "You do not have beta access: no beta version is available to your license."
+        if [ "${KEPLER_ACCEPT_STABLE-}" = "1" ]; then
+            echo "Continuing with the stable version (KEPLER_ACCEPT_STABLE=1)."
+            INSTALL_CHANNEL="stable"
+        elif [ "${KEPLER_DRY_RUN-}" = "1" ]; then
+            echo "Dry run: a real install asks before it continues with the stable version."
+        elif ( : </dev/tty ) 2>/dev/null; then
+            printf 'Would you like to proceed with the stable version? [y/N] ' >&2
+            read -r stable_answer </dev/tty || stable_answer=""
+            case "$stable_answer" in
+                y|Y|yes|Yes|YES) INSTALL_CHANNEL="stable" ;;
+                *)
+                    echo "Nothing was installed. For beta access contact support@aichargelabs.com."
+                    exit 1
+                    ;;
+            esac
+        else
+            printf '%s\n' "Error: nothing was installed. For beta access contact support@aichargelabs.com." >&2
+            printf '%s\n' "To install the stable version instead, set KEPLER_ACCEPT_STABLE=1 and run again." >&2
+            exit 1
+        fi
+    fi
 fi
 
 wanted="${KEPLER_VERSION-}"

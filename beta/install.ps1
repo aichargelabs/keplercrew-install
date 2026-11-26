@@ -6,6 +6,7 @@
 #   KEPLER_VERSION      optional version such as 1.0.0-beta.1 (default: latest)
 #   KEPLER_CHANNEL      beta (default: stable and beta releases) or stable (stable only)
 #   KEPLER_DRY_RUN      set to 1 to resolve and print the release without downloading
+#   KEPLER_ACCEPT_STABLE set to 1 to install stable without asking when the license has no beta access
 #   KEPLER_INSTALL_DIR  optional install directory (default: %LOCALAPPDATA%\Programs\KeplerCrew)
 #   KEPLER_NO_LAUNCH    set to 1 to skip launching after install
 #   KEPLER_FORCE        set to 1 to reinstall even when already on the resolved version
@@ -361,6 +362,39 @@ function Install-KeplerCrew {
             throw ('Your license is valid but is not entitled to any published release. ' +
                    'This is a license configuration problem, not a problem with your machine. ' +
                    'Contact support@aichargelabs.com and quote error RELEASE-NONE-BETA.')
+        }
+
+        # A license without beta access is shown stable releases only. Ask before the
+        # beta command installs stable. An install already on beta is the normal update path.
+        $hasBeta = @($allReleases | Where-Object { $_.attributes.channel -eq 'beta' }).Count -gt 0
+        if ($installChannel -eq 'beta' -and -not $hasBeta -and [string]::IsNullOrWhiteSpace($env:KEPLER_VERSION)) {
+            $installedChannel = ''
+            $channelFile = Join-Path $installDir 'channel.txt'
+            if (Test-Path -LiteralPath $channelFile) {
+                $installedChannel = ([string](Get-Content -LiteralPath $channelFile -Raw)).Trim()
+            }
+            if ($installed -like '*-beta.*') { $installedChannel = 'beta' }
+            if ($installedChannel -ne 'beta') {
+                Write-Host 'You do not have beta access: no beta version is available to your license.'
+                if ($env:KEPLER_ACCEPT_STABLE -eq '1') {
+                    Write-Host 'Continuing with the stable version (KEPLER_ACCEPT_STABLE=1).'
+                    $installChannel = 'stable'
+                }
+                elseif ($env:KEPLER_DRY_RUN -eq '1') {
+                    Write-Host 'Dry run: a real install asks before it continues with the stable version.'
+                }
+                elseif ([Console]::IsInputRedirected) {
+                    throw ('Nothing was installed. For beta access contact support@aichargelabs.com. ' +
+                           'To install the stable version instead, set KEPLER_ACCEPT_STABLE=1 and run again.')
+                }
+                else {
+                    $stableAnswer = Read-Host 'Would you like to proceed with the stable version? [y/N]'
+                    if ($stableAnswer -notmatch '^\s*(y|yes)\s*$') {
+                        throw 'Nothing was installed. For beta access contact support@aichargelabs.com.'
+                    }
+                    $installChannel = 'stable'
+                }
+            }
         }
 
         # Sort by the version string: numeric X.Y.Z first, then stable above every

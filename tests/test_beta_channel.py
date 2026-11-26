@@ -122,6 +122,7 @@ class BetaChannelTest(unittest.TestCase):
                 ["sh", str(ROOT / script)],
                 env=env,
                 stdin=subprocess.DEVNULL,
+                start_new_session=True,
                 capture_output=True,
                 text=True,
                 timeout=20,
@@ -174,15 +175,61 @@ class BetaChannelTest(unittest.TestCase):
         )
         self.assertNotIn("Version:", result.stdout)
 
-    def test_up_to_date_beta_install_persists_channel(self):
+    def test_no_beta_access_without_a_terminal_installs_nothing(self):
+        result = self.run_installer([release("8.6.13", "stable")], dry_run=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("You do not have beta access", result.stdout)
+        self.assertIn("Error: nothing was installed.", result.stderr)
+        self.assertIn("KEPLER_ACCEPT_STABLE=1", result.stderr)
+        self.assertNotIn("Version:", result.stdout)
+        self.assertIsNone(result.channel_text)
+
+    def test_no_beta_access_on_a_stable_install_is_not_silent(self):
         result = self.run_installer(
             [release("8.6.13", "stable")],
             installed="8.6.13",
             dry_run=False,
         )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("You do not have beta access", result.stdout)
+        self.assertIsNone(result.channel_text)
+
+    def test_no_beta_access_accepted_installs_stable(self):
+        result = self.run_installer(
+            [release("8.6.13", "stable")],
+            installed="8.6.13",
+            dry_run=False,
+            extra_env={"KEPLER_ACCEPT_STABLE": "1"},
+        )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(result.channel_text, "beta")
-        self.assertIn("Channel set to beta.", result.stdout)
+        self.assertIn("Continuing with the stable version", result.stdout)
+        self.assertEqual(result.channel_text, "stable")
+        self.assertIn("Channel set to stable.", result.stdout)
+
+    def test_no_beta_access_dry_run_says_it_would_ask(self):
+        result = self.run_installer([release("8.6.13", "stable")])
+        self.assert_version(result, "8.6.13")
+        self.assertIn("You do not have beta access", result.stdout)
+        self.assertIn("Dry run: a real install asks", result.stdout)
+
+    def test_beta_access_is_never_asked(self):
+        result = self.run_installer(MIXED, dry_run=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("You do not have beta access", result.stdout)
+
+    def test_install_already_on_beta_updates_to_stable_without_asking(self):
+        result = self.run_installer(
+            [release("8.6.14", "stable")], installed="8.6.14-beta.3", dry_run=False
+        )
+        self.assertNotIn("You do not have beta access", result.stdout)
+        self.assertNotIn("nothing was installed", result.stderr)
+
+    def test_shell_fallback_also_asks(self):
+        result = self.run_installer(
+            [release("8.6.13", "stable")], dry_run=False, force_shell=True
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("You do not have beta access", result.stdout)
 
     def test_up_to_date_stable_install_persists_channel(self):
         result = self.run_installer(
