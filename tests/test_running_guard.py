@@ -45,6 +45,18 @@ class RunningGuardTest(unittest.TestCase):
             self.assertIn("This is running inside a Kepler task", result.stdout + result.stderr)
             self.assertNotIn("Stopping the running KeplerCrew", result.stdout + result.stderr)
 
+    def test_missing_home_skips_live_run_lookup(self):
+        env = {
+            "PATH": os.environ["PATH"],
+            "KEPLER_KEYGEN_BASE": "https://unsupported.invalid/v1",
+            "KEPLER_INSTALL_DIR": "/tmp/kepler-missing-home-install",
+        }
+        for script in ("install.sh", "beta/install.sh"):
+            with self.subTest(script=script):
+                result = subprocess.run(["sh", str(ROOT / script)], env=env, text=True, capture_output=True, timeout=20)
+                self.assertNotIn("parameter", result.stderr.lower(), result.stdout + result.stderr)
+                self.assertIn("Unsupported licensing endpoint", result.stdout + result.stderr)
+
     def test_dead_or_missing_live_state_does_not_refuse(self):
         for script in SCRIPTS:
             missing = self.run_script(script)

@@ -16,11 +16,16 @@ function Test-KeplerInstallerGuard {
         throw 'This is running inside a Kepler task. Updating Kepler from a task would stop every run. Run the installer from your own terminal.'
     }
     $dataDir = $env:APEX_HOME
-    if ([string]::IsNullOrWhiteSpace($dataDir)) { $dataDir = Join-Path $env:USERPROFILE '.kepler-trial' }
-    $liveDir = Join-Path $dataDir 'state/live'
+    if ([string]::IsNullOrWhiteSpace($dataDir)) {
+        $homeDir = $env:USERPROFILE
+        if ([string]::IsNullOrWhiteSpace($homeDir)) { $homeDir = $env:HOME }
+        if (-not [string]::IsNullOrWhiteSpace($homeDir)) { $dataDir = Join-Path $homeDir '.kepler-trial' }
+    }
     $busy = @()
-    try {
-        foreach ($file in (Get-ChildItem -LiteralPath $liveDir -Filter '*.json' -File -ErrorAction Stop)) {
+    if (-not [string]::IsNullOrWhiteSpace($dataDir)) {
+        $liveDir = Join-Path $dataDir 'state/live'
+        try {
+            foreach ($file in (Get-ChildItem -LiteralPath $liveDir -Filter '*.json' -File -ErrorAction Stop)) {
             try {
                 $record = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
                 $status = [string]$record.apex_status
@@ -31,8 +36,9 @@ function Test-KeplerInstallerGuard {
                     if (-not [string]::IsNullOrWhiteSpace([string]$record.title)) { $busy[-1] = [string]$record.title } elseif (-not [string]::IsNullOrWhiteSpace([string]$record.cycle_id)) { $busy[-1] = [string]$record.cycle_id } } catch { }
                 }
             } catch { }
-        }
-    } catch { }
+            }
+        } catch { }
+    }
     if ($busy.Count -gt 0 -and -not $Force -and $env:KEPLER_FORCE_RUNNING -ne '1') {
         throw (('Kepler has live runs; let them finish first, or override with -Force or KEPLER_FORCE_RUNNING=1:') + [Environment]::NewLine + ($busy -join [Environment]::NewLine))
     }

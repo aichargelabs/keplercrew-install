@@ -47,7 +47,13 @@ for arg in "$@"; do [ "$arg" = "--force" ] && force=1; done
 # The environment variable works in every form and never applies to the
 # inside-task refusal above.
 if [ "${KEPLER_FORCE_RUNNING:-}" = "1" ]; then force=1; fi
-_data_dir="${APEX_HOME:-$HOME/.kepler-trial}"
+_data_dir="${APEX_HOME:-}"
+if [ -z "$_data_dir" ]; then
+    _home_dir="${USERPROFILE:-${HOME:-}}"
+    if [ -n "$_home_dir" ]; then _data_dir="$_home_dir/.kepler-trial"; fi
+fi
+_busy_runs=""
+if [ -n "$_data_dir" ]; then
 if command -v python3 >/dev/null 2>&1; then
     _busy_runs=$(python3 - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
 import glob,json,os,sys,errno
@@ -75,6 +81,7 @@ PYGUARD
 )
 else
     _busy_runs=$(kepler_busy_runs_without_python "$_data_dir/state/live")
+fi
 fi
 if [ -n "$_busy_runs" ] && [ "$force" != "1" ]; then
     echo "Kepler has live runs; let them finish first, or override with --force or KEPLER_FORCE_RUNNING=1:" >&2
