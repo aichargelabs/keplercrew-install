@@ -59,7 +59,7 @@ fi
 _busy_runs=""
 if [ -n "$_data_dir" ]; then
 if command -v python3 >/dev/null 2>&1; then
-    _busy_runs=$(python3 - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
+    _busy_runs=$(python3 -I - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
 import glob,json,os,sys,errno
 terminal={'completed','failed','killed','done','idle','error','halted'}
 for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
@@ -121,7 +121,7 @@ ACCEPT="application/vnd.api+json"
 # Uses order-independent key extraction via grep rather than tr '{' splitting.
 parse_json_field() {
     if command -v python3 >/dev/null 2>&1; then
-        python3 -c "import sys,json; d=json.load(sys.stdin); print('$1')" 2>/dev/null || return 1
+        python3 -I -c "import sys,json; d=json.load(sys.stdin); print('$1')" 2>/dev/null || return 1
     else
         return 1
     fi
@@ -260,7 +260,7 @@ parse_releases_shell() {
 
 parse_releases_python() {
     if command -v python3 >/dev/null 2>&1; then
-        printf '%s' "$releases" | python3 -c "
+        printf '%s' "$releases" | python3 -I -c "
 import sys, json
 data = json.load(sys.stdin)
 for item in data.get('data', []):
@@ -434,7 +434,7 @@ candidates=""
 if [ -n "$wanted" ]; then
     wanted=$(printf '%s' "$wanted" | sed 's/^v//')
     if [ "$use_python" = "1" ]; then
-        version=$(printf '%s' "$published" | python3 -c "
+        version=$(printf '%s' "$published" | python3 -I -c "
 import sys, json
 for line in sys.stdin:
     attrs = json.loads(line)
@@ -461,7 +461,7 @@ else
     # Newest first. The artifact probe below skips releases with no bundle
     # for this platform, so a platform lag does not strand the install.
     if [ "$use_python" = "1" ]; then
-        candidates=$(printf '%s' "$published" | python3 -c "
+        candidates=$(printf '%s' "$published" | python3 -I -c "
 import sys, json, re
 versions = []
 for line in sys.stdin:
@@ -507,7 +507,7 @@ release_id_for() {
     candidate="$1"
     found=""
     if [ "$use_python" = "1" ]; then
-        found=$(printf '%s' "$published" | python3 -c "
+        found=$(printf '%s' "$published" | python3 -I -c "
 import sys, json
 for line in sys.stdin:
     attrs = json.loads(line)

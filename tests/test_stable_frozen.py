@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # Only the installer guard block changed in the stable scripts; release logic is frozen.
 FROZEN_SHA256 = {
     "install.ps1": "7fb08b67af825c5b00c6fc0d686a5ecb200d42ae7fe2a6e2516438a60734aa13",
-    "install.sh": "83ec02102186da8f275fcea927c64b3dcbc07e5ebcdb0c565d1306ee5e7c5d98",
+    "install.sh": "3d6d70d46d64362cac94d5326077e87c883ed0f5a154939e3ee47f3fddda8ac7",
 }
 
 

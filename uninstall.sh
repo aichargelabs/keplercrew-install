@@ -55,7 +55,7 @@ fi
 _busy_runs=""
 if [ -n "$_data_dir" ]; then
 if command -v python3 >/dev/null 2>&1; then
-    _busy_runs=$(python3 - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
+    _busy_runs=$(python3 -I - "$_data_dir/state/live" <<'PYGUARD' 2>/dev/null || true
 import glob,json,os,sys,errno
 terminal={'completed','failed','killed','done','idle','error','halted'}
 for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
