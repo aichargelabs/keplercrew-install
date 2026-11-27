@@ -12,6 +12,55 @@
 #   security policy is changed. SAC-enabled machines install signed bundles only.
 # Author: aichargelabs.
 
+param([switch]$Force)
+
+function Test-KeplerInstallerGuard {
+    param([switch]$Force)
+    if ($env:KEPLER_INSIDE_RUN -eq '1') {
+        throw 'This is running inside a Kepler task. Updating Kepler from a task would stop every run. Run the installer from your own terminal.'
+    }
+    $dataDir = $env:APEX_HOME
+    if ([string]::IsNullOrWhiteSpace($dataDir)) {
+        $homeDir = $env:USERPROFILE
+        if ([string]::IsNullOrWhiteSpace($homeDir)) { $homeDir = $env:HOME }
+        if (-not [string]::IsNullOrWhiteSpace($homeDir)) { $dataDir = Join-Path $homeDir '.kepler-trial' }
+    }
+    $busy = @()
+    if (-not [string]::IsNullOrWhiteSpace($dataDir)) {
+        $liveDir = Join-Path $dataDir 'state/live'
+        try {
+            foreach ($file in (Get-ChildItem -LiteralPath $liveDir -Filter '*.json' -File -ErrorAction Stop)) {
+            try {
+                $record = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+                $status = [string]$record.apex_status
+                $pidValue = 0
+                if ($null -ne $record.pid) { $pidValue = [int]$record.pid }
+                if (@('completed','failed','killed','done','idle','error','halted') -notcontains $status.ToLowerInvariant() -and $pidValue -gt 0) {
+                    try { $process = Get-Process -Id $pidValue -ErrorAction Stop; if ($null -ne $record.pid_create_time -and [math]::Abs(($process.StartTime.ToUniversalTime() - [DateTimeOffset]::FromUnixTimeSeconds([long]$record.pid_create_time).UtcDateTime).TotalSeconds) -gt 2) { continue }; $busy += [string]$file.BaseName
+                    if (-not [string]::IsNullOrWhiteSpace([string]$record.title)) { $busy[-1] = [string]$record.title } elseif (-not [string]::IsNullOrWhiteSpace([string]$record.cycle_id)) { $busy[-1] = [string]$record.cycle_id } } catch { }
+                }
+            } catch { }
+            }
+        } catch { }
+    }
+    if ($busy.Count -gt 0 -and -not $Force -and $env:KEPLER_FORCE_RUNNING -ne '1') {
+        throw (('Kepler has live runs; let them finish first, or override with -Force or KEPLER_FORCE_RUNNING=1:') + [Environment]::NewLine + ($busy -join [Environment]::NewLine))
+    }
+}
+
+try {
+    Test-KeplerInstallerGuard -Force:$Force
+}
+catch {
+    # Refused. Under iex the calling shell has to stay open with the message on
+    # screen, so there is no exit here. A script started with -File runs in its
+    # own process and sets the exit code there.
+    $host.UI.WriteErrorLine($_.Exception.Message)
+    $global:LASTEXITCODE = 3
+    if (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) { exit 3 }
+    return
+}
+
 # Runtime PS version check (no #Requires to avoid breaking irm|iex on some hosts)
 if ($PSVersionTable.PSVersion.Major -lt 5) {
     Write-Host 'PowerShell 5.0 or later is required. You are running version ' $PSVersionTable.PSVersion
