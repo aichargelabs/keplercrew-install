@@ -29,7 +29,6 @@ function Test-KeplerInstallerGuard {
         foreach ($file in (Get-ChildItem -LiteralPath $liveDir -Filter '*.json' -File -ErrorAction Stop)) {
             try {
                 $record = Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-                if (((Get-Date) - $file.LastWriteTimeUtc).TotalSeconds -gt 86400) { continue }
                 $status = [string]$record.apex_status
                 $pidValue = 0
                 if ($null -ne $record.pid) { $pidValue = [int]$record.pid }

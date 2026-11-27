@@ -52,10 +52,13 @@ class RunningGuardTest(unittest.TestCase):
             with tempfile.TemporaryDirectory() as home:
                 self.add_record(home, 2147483647)
                 env = {**os.environ, "APEX_HOME": home, "KEPLER_INSTALL_DIR": str(Path(home) / "missing-install")}
+                record = Path(home) / "state" / "live" / "cycle-123.json"
+                old = time.time() - 90000
+                os.utime(record, (old, old))
                 dead = subprocess.run(["sh", str(ROOT / script)], env=env, text=True, capture_output=True, timeout=20)
                 self.assertNotEqual(dead.returncode, 3, dead.stdout + dead.stderr)
 
-    def test_stale_live_record_does_not_refuse(self):
+    def test_live_record_older_than_24_hours_refuses(self):
         for script in SCRIPTS:
             with self.subTest(script=script), tempfile.TemporaryDirectory() as home:
                 self.add_record(home, os.getpid())
@@ -64,7 +67,8 @@ class RunningGuardTest(unittest.TestCase):
                 os.utime(record, (old, old))
                 env = {**os.environ, "APEX_HOME": home, "KEPLER_INSTALL_DIR": str(Path(home) / "missing-install")}
                 result = subprocess.run(["sh", str(ROOT / script)], env=env, text=True, capture_output=True, timeout=20)
-                self.assertNotEqual(result.returncode, 3, result.stdout + result.stderr)
+                self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+                self.assertIn("guard test", result.stdout + result.stderr)
 
     def test_reinstall_environment_flag_does_not_override_live_guard(self):
         with tempfile.TemporaryDirectory() as home:

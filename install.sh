@@ -57,7 +57,6 @@ terminal={'completed','failed','killed','done','idle','error','halted'}
 for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
     try:
         with open(path,encoding='utf-8') as f: rec=json.load(f)
-        if os.path.getmtime(path) < __import__('time').time()-86400: continue
         pid=int(rec.get('pid') or 0)
         status=str(rec.get('apex_status') or '').lower()
         if status not in terminal and pid>0:

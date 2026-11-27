@@ -17,8 +17,6 @@ kepler_busy_runs_without_python() {
     _live_dir="$1"
     for _file in "$_live_dir"/*.json; do
         [ -f "$_file" ] || continue
-        _age=$(($(date +%s) - $(date -r "$_file" +%s 2>/dev/null || echo 0)))
-        [ "$_age" -le 86400 ] || continue
         _pid=$(grep '"pid"' "$_file" 2>/dev/null | sed -n '1{s/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p;}')
         [ -n "$_pid" ] || continue
         _status=$(grep '"apex_status"' "$_file" 2>/dev/null | sed -n '1{s/.*"apex_status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p;}')
@@ -57,7 +55,6 @@ terminal={'completed','failed','killed','done','idle','error','halted'}
 for path in glob.glob(os.path.join(sys.argv[1],'*.json')):
     try:
         with open(path,encoding='utf-8') as f: rec=json.load(f)
-        if os.path.getmtime(path) < __import__('time').time()-86400: continue
         pid=int(rec.get('pid') or 0)
         status=str(rec.get('apex_status') or '').lower()
         if status not in terminal and pid>0:
